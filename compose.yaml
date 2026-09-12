@@ -1,0 +1,18 @@
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: natacion-db
+    environment:
+      POSTGRES_USER: natacion
+      POSTGRES_PASSWORD: natacion_local
+      POSTGRES_DB: natacion
+    ports:
+      - "5433:5432"
+    volumes:
+      - natacion_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U natacion -d natacion"]
+      interval: 5s
+      retries: 10
+volumes:
+  natacion_pgdata:

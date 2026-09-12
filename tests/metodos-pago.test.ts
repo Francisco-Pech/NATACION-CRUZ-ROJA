@@ -1,0 +1,50 @@
+import { describe, it, expect } from 'vitest'
+import { metodosDisponibles } from '@/lib/metodos-pago'
+
+const LIMITE = new Date('2026-03-06T23:59:59')
+
+const CONFIGS = [
+  { metodo: 'EFECTIVO' as const, porcentaje: 0, montoFijo: 0, iva: 0.16, activo: true, diasCorteAntesDeVencimiento: 0 },
+  { metodo: 'TRANSFERENCIA' as const, porcentaje: 0, montoFijo: 0, iva: 0.16, activo: true, diasCorteAntesDeVencimiento: 0 },
+  { metodo: 'TARJETA' as const, porcentaje: 0.036, montoFijo: 300, iva: 0.16, activo: true, diasCorteAntesDeVencimiento: 0 },
+  { metodo: 'SPEI' as const, porcentaje: 0.036, montoFijo: 300, iva: 0.16, activo: true, diasCorteAntesDeVencimiento: 0 },
+  { metodo: 'OXXO' as const, porcentaje: 0.036, montoFijo: 1200, iva: 0.16, activo: true, diasCorteAntesDeVencimiento: 3 },
+]
+
+const nombres = (fecha: Date) => metodosDisponibles(CONFIGS, LIMITE, fecha).map((m) => m.metodo)
+
+describe('metodosDisponibles', () => {
+  it('ofrece OXXO con holgura suficiente antes del vencimiento', () => {
+    expect(nombres(new Date('2026-03-01T10:00:00'))).toContain('OXXO')
+  })
+
+  it('retira OXXO dentro de los 3 días previos al vencimiento', () => {
+    // Pagar en OXXO el día 4 no alcanza a reflejarse para el límite del 6.
+    expect(nombres(new Date('2026-03-04T10:00:00'))).not.toContain('OXXO')
+    expect(nombres(new Date('2026-03-06T10:00:00'))).not.toContain('OXXO')
+  })
+
+  it('vuelve a ofrecer OXXO una vez vencido: ya no hay plazo que perder', () => {
+    expect(nombres(new Date('2026-03-10T10:00:00'))).toContain('OXXO')
+  })
+
+  it('nunca retira tarjeta ni SPEI, que confirman al instante', () => {
+    for (const dia of ['2026-03-01', '2026-03-04', '2026-03-06', '2026-03-10']) {
+      const m = nombres(new Date(`${dia}T10:00:00`))
+      expect(m).toContain('TARJETA')
+      expect(m).toContain('SPEI')
+    }
+  })
+
+  it('omite los métodos desactivados', () => {
+    const sinTarjeta = CONFIGS.map((c) => (c.metodo === 'TARJETA' ? { ...c, activo: false } : c))
+    const m = metodosDisponibles(sinTarjeta, LIMITE, new Date('2026-03-01T10:00:00')).map((x) => x.metodo)
+    expect(m).not.toContain('TARJETA')
+  })
+
+  it('marca cuáles son en línea y cuáles se pagan en persona', () => {
+    const todos = metodosDisponibles(CONFIGS, LIMITE, new Date('2026-03-01T10:00:00'))
+    const enLinea = todos.filter((m) => m.enLinea).map((m) => m.metodo)
+    expect(enLinea.sort()).toEqual(['OXXO', 'SPEI', 'TARJETA'])
+  })
+})

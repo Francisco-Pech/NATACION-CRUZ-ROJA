@@ -1,0 +1,534 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Rol {
+  ADMINISTRADOR
+  CAPTURISTA
+  PROFESOR
+}
+
+enum Categoria {
+  NINOS
+  GENERAL
+}
+
+enum EstadoCiclo {
+  ABIERTO
+  CERRADO
+}
+
+enum EstadoInscripcion {
+  ACTIVA
+  BAJA
+}
+
+enum EstadoCargo {
+  PENDIENTE
+  EN_REVISION
+  PAGADO
+  VENCIDO
+  CANCELADO
+}
+
+enum MetodoPago {
+  EFECTIVO
+  TRANSFERENCIA
+  TARJETA
+  SPEI
+  OXXO
+}
+
+enum EstadoPago {
+  INICIADO
+  EN_REVISION
+  CONFIRMADO
+  RECHAZADO
+}
+
+enum EstadoFactura {
+  SOLICITADA
+  EN_PROCESO
+  FACTURADA
+  CANCELADA
+}
+
+/// Qué clase de día no se trabaja. Solo DIA_INHABIL corre la fecha límite
+/// de pago; los otros dos cierran la alberca pero no tocan la cobranza.
+/// Cómo se repiten las fechas de un curso.
+/// RECURRENTE: las mismas todos los años. UNICO: una sola vez, en su año.
+/// MIXTO: varias temporadas al año, y se repiten.
+enum ModoFechaCurso {
+  RECURRENTE
+  UNICO
+  MIXTO
+}
+
+enum TipoDiaInhabil {
+  DIA_INHABIL
+  PERIODO_VACACIONAL
+  EXCEPCION
+}
+
+enum TipoDescuento {
+  PORCENTAJE
+  MONTO_FIJO
+}
+
+model Usuario {
+  id           String   @id @default(cuid())
+  nombre       String
+  email        String   @unique
+  passwordHash String
+  rol          Rol
+  activo       Boolean  @default(true)
+  creadoEn     DateTime @default(now())
+
+  pagosRegistrados  Pago[]             @relation("PagoRegistradoPor")
+  pagosValidados    Pago[]             @relation("PagoValidadoPor")
+  asistencias       Asistencia[]
+  facturasAtendidas SolicitudFactura[]
+}
+
+model Alumno {
+  id                         String    @id @default(cuid())
+  nombreCompleto             String
+  fechaNacimiento            DateTime?
+  telefono                   String?
+  email                      String?
+  direccion                  String?
+  contactoEmergenciaNombre   String?
+  contactoEmergenciaTelefono String?
+  condicionesMedicas         String?
+  categoria                  Categoria @default(GENERAL)
+  fotoUrl                    String?
+
+  rfc           String?
+  razonSocial   String?
+  codigoPostal  String?
+  regimenFiscal String?
+  usoCfdi       String?
+
+  datosCompletos Boolean  @default(false)
+  creadoEn       DateTime @default(now())
+
+  inscripciones Inscripcion[]
+}
+
+model CicloAnual {
+  id                String      @id @default(cuid())
+  anio              Int         @unique
+  estado            EstadoCiclo @default(ABIERTO)
+  diasHabilesLimite Int         @default(5)
+
+  inscripciones Inscripcion[]
+  periodos      Periodo[]
+  tarifas       Tarifa[]
+}
+
+model Inscripcion {
+  id           String            @id @default(cuid())
+  alumnoId     String
+  cicloAnualId String
+  descuentoId  String?
+  folio        String            @unique
+  tokenQR      String            @unique
+  estado       EstadoInscripcion @default(ACTIVA)
+  creadoEn     DateTime          @default(now())
+
+  alumno    Alumno     @relation(fields: [alumnoId], references: [id], onDelete: Cascade)
+  ciclo     CicloAnual @relation(fields: [cicloAnualId], references: [id], onDelete: Cascade)
+  descuento Descuento? @relation(fields: [descuentoId], references: [id])
+
+  sesiones    InscripcionSesion[]
+  cargos      Cargo[]
+  lockers     AsignacionLocker[]
+  asistencias Asistencia[]
+
+  @@unique([alumnoId, cicloAnualId])
+}
+
+model Periodo {
+  id              String      @id @default(cuid())
+  cicloAnualId    String
+  mes             Int
+  clave           String      @unique
+  fechaLimite     DateTime
+  recargo         Int         @default(5000)
+  precioLocker    Int         @default(10000)
+  estado          EstadoCiclo @default(ABIERTO)
+  cargosGenerados Boolean     @default(false)
+
+  ciclo   CicloAnual         @relation(fields: [cicloAnualId], references: [id], onDelete: Cascade)
+  cargos  Cargo[]
+  lockers AsignacionLocker[]
+
+  @@unique([cicloAnualId, mes])
+}
+
+/// El calendario de días que no se trabaja: festivos oficiales, temporadas
+/// sin clases y excepciones sueltas.
+///
+/// Todo es un rango —un solo día es un rango de un día— para que capturar
+/// Semana Santa no sean siete renglones. El `tipo` es lo que decide si el
+/// renglón corre la fecha límite de pago: solo DIA_INHABIL lo hace.
+model DiaInhabil {
+  id          String         @id @default(cuid())
+  hash        String         @unique
+  tipo        TipoDiaInhabil @default(DIA_INHABIL)
+  nombre      String
+  descripcion String?
+  desde       DateTime
+  hasta       DateTime
+  /// Se repite con las mismas fechas todos los años. Sirve para los de
+  /// fecha fija; los que se mueven —Semana Santa, los lunes de puente—
+  /// se capturan año por año porque cada año caen distinto.
+  cadaAnio    Boolean        @default(false)
+
+  @@index([desde])
+}
+
+/// Qué días abre la alberca y en qué franjas. Es el marco: la rejilla de
+/// cursos no debería abrir una clase fuera de aquí.
+model FranjaLaboral {
+  id          String  @id @default(cuid())
+  hash        String  @unique
+  diaSemanaId String
+  horarioId   String
+  activo      Boolean @default(true)
+
+  diaSemana DiaSemana @relation(fields: [diaSemanaId], references: [id], onDelete: Cascade)
+  horario   Horario   @relation(fields: [horarioId], references: [id], onDelete: Cascade)
+  sesiones  Sesion[]
+
+  @@unique([diaSemanaId, horarioId])
+}
+
+/// Lo que se cobra aparte del curso.
+///
+/// El locker y el recargo por pagar tarde. Antes colgaban de cada mes: doce
+/// renglones con el mismo número. Aquí es uno solo con su tramo de fechas.
+model Costo {
+  id            String        @id @default(cuid())
+  hash          String        @unique
+  concepto      ConceptoCosto
+  /// En centavos, como todo el dinero del sistema.
+  monto         Int
+  vigenciaDesde DateTime
+  vigenciaHasta DateTime
+
+  @@index([concepto, vigenciaDesde])
+}
+
+enum ConceptoCosto {
+  /// Por mes y por locker ocupado.
+  LOCKER
+  /// Una vez por cargo de curso que pasó su fecha límite sin pagarse. No
+  /// se cobra sobre el locker.
+  RECARGO
+}
+
+/// La tabla de costos: se escoge el curso, se marca si es único o
+/// recurrente, se escoge cada cuánto y se pone el precio.
+///
+/// Las formas de cobro de un curso son las filas que tiene. Salvavidas con
+/// una sola fila ÚNICO no da opción; un curso con dos filas se puede pagar
+/// de las dos maneras.
+///
+/// Cuelga del ciclo y no del mes: un precio anual no significa nada
+/// repetido doce veces. Cambiarlo no altera lo ya cobrado, porque Cargo
+/// guarda los montos calculados al generarse.
+model Tarifa {
+  id            String   @id @default(cuid())
+  hash          String   @unique
+  /// Solo informativo: lo que decide cuándo rige el precio es su tramo
+  /// de fechas. Vacío cuando se captura un año que todavía no tiene ciclo.
+  cicloAnualId  String?
+  tipoCursoId   String
+  tipoPagoId    String
+  frecuenciaId  String?
+  monto         Int
+  /// Entre qué fechas rige este precio. Dos precios del mismo curso pueden
+  /// convivir si sus tramos no se pisan: uno de 2026 y otro de 2027.
+  vigenciaDesde DateTime
+  vigenciaHasta DateTime
+
+  ciclo      CicloAnual?     @relation(fields: [cicloAnualId], references: [id], onDelete: Cascade)
+  tipoCurso  TipoCurso       @relation(fields: [tipoCursoId], references: [id], onDelete: Cascade)
+  tipoPago   TipoPago        @relation(fields: [tipoPagoId], references: [id], onDelete: Restrict)
+  frecuencia FrecuenciaPago? @relation(fields: [frecuenciaId], references: [id], onDelete: Restrict)
+
+  @@index([tipoCursoId, vigenciaDesde])
+}
+
+/// Un descuento que se le puede aplicar a una inscripción.
+///
+/// El valor se guarda entero: en PORCENTAJE es el por ciento (20 = 20 %) y
+/// en MONTO_FIJO son centavos, igual que todo el dinero del sistema.
+model Descuento {
+  id            String        @id @default(cuid())
+  hash          String        @unique
+  /// No se edita: es de lo que se agarran el seeder y la lógica.
+  clave         String        @unique
+  nombre        String
+  descripcion   String?
+  tipo          TipoDescuento
+  valor         Int
+  /// Desde y hasta cuándo se puede dar. Vacías: sin límite de fecha.
+  vigenciaDesde DateTime?
+  vigenciaHasta DateTime?
+  /// Cuántas veces se puede dar en total. Vacío: sin límite.
+  limiteUsos    Int?
+  activo        Boolean       @default(true)
+
+  inscripciones Inscripcion[]
+}
+
+/// Qué cursos ofrece la escuela.
+///
+/// `nombre` es lo que ve el alumno y se puede editar. `clave` no se ve en
+/// ninguna pantalla: se genera sola del nombre al crear el curso y ya no
+/// cambia. Es de lo que se agarra el código —y el seeder— para reconocer
+/// al curso aunque le cambien el nombre.
+model TipoCurso {
+  id          String         @id @default(cuid())
+  hash        String         @unique
+  clave       String         @unique
+  nombre      String
+  descripcion String?
+  /// Cómo se repiten sus temporadas. Las fechas viven en `temporadas`.
+  modoFecha   ModoFechaCurso @default(RECURRENTE)
+  activo      Boolean        @default(true)
+
+  sesiones   Sesion[]
+  tarifas    Tarifa[]
+  cargos     Cargo[]
+  temporadas TemporadaCurso[]
+}
+
+/// Un tramo del año en que el curso corre. Según el modo del curso se
+/// repite cada año o vale solo para el suyo.
+model TemporadaCurso {
+  id          String   @id @default(cuid())
+  hash        String   @unique
+  tipoCursoId String
+  /// Una nota opcional: "Verano", "Certificación". Lo que de verdad
+  /// identifica a la temporada son sus fechas.
+  nombre      String?
+  desde       DateTime
+  hasta       DateTime
+
+  tipoCurso TipoCurso @relation(fields: [tipoCursoId], references: [id], onDelete: Cascade)
+  sesiones  Sesion[]
+
+  @@index([tipoCursoId])
+}
+
+/// Qué días existen, y si están activos. `numero` es la numeración del
+/// calendario —domingo 0 … sábado 6, la misma que devuelve `Date.getDay()`—
+/// y de ahí sale también el orden de lunes a domingo, sin guardarlo aparte.
+model DiaSemana {
+  id          String  @id @default(cuid())
+  hash        String  @unique
+  clave       String  @unique
+  nombre      String
+  descripcion String?
+  numero      Int     @unique
+  activo      Boolean @default(true)
+
+  laborales FranjaLaboral[]
+}
+
+/// Catálogo de franjas horarias. Vive aparte de los cursos a propósito:
+/// que una franja exista y no la ocupe nadie es normal, no un error.
+/// Se ordenan por su hora de inicio; no hace falta guardar un orden.
+model Horario {
+  id          String  @id @default(cuid())
+  hash        String  @unique
+  horaInicio  String
+  horaFin     String
+  descripcion String?
+  activo      Boolean @default(true)
+
+  sesiones  Sesion[]
+  laborales FranjaLaboral[]
+
+  @@unique([horaInicio, horaFin])
+}
+
+/// El cruce de un día con un horario para un curso: una celda marcada de
+/// la rejilla. El cupo vive aquí porque es lo único que significa algo
+/// físico — cuánta gente cabe en la alberca ese día a esa hora.
+model Sesion {
+  id               String  @id @default(cuid())
+  hash             String  @unique
+  /// Qué se escogió en cada selector. El curso, el día y la hora se siguen
+  /// guardando aparte: de ahí los leen las inscripciones y el cobro.
+  temporadaCursoId String?
+  franjaLaboralId  String?
+  tipoCursoId      String
+  horarioId        String
+  diaSemana        Int
+  /// Una nota libre de esa clase. Opcional.
+  descripcion      String?
+  cupoMaximo       Int     @default(35)
+  /// Tolerancia sobre el cupo: del cupo a cupo+extras se avisa pero se deja
+  /// pasar. Pasando los extras, no.
+  extras           Int     @default(10)
+  activo           Boolean @default(true)
+
+  tipoCurso TipoCurso       @relation(fields: [tipoCursoId], references: [id], onDelete: Cascade)
+  horario   Horario         @relation(fields: [horarioId], references: [id], onDelete: Restrict)
+  temporada TemporadaCurso? @relation(fields: [temporadaCursoId], references: [id], onDelete: SetNull)
+  franja    FranjaLaboral?  @relation(fields: [franjaLaboralId], references: [id], onDelete: SetNull)
+
+  inscritos InscripcionSesion[]
+
+  @@unique([tipoCursoId, horarioId, diaSemana])
+  @@index([temporadaCursoId])
+  @@index([franjaLaboralId])
+}
+
+/// A qué sesiones va cada alumno. Un niño de lunes, miércoles y viernes
+/// tiene tres renglones aquí.
+model InscripcionSesion {
+  id            String   @id @default(cuid())
+  inscripcionId String
+  sesionId      String
+  creadoEn      DateTime @default(now())
+
+  inscripcion Inscripcion @relation(fields: [inscripcionId], references: [id], onDelete: Cascade)
+  sesion      Sesion      @relation(fields: [sesionId], references: [id], onDelete: Restrict)
+
+  @@unique([inscripcionId, sesionId])
+}
+
+/// ¿Se cobra una vez o se repite? Es tabla y no enum para que se puedan
+/// agregar formas sin migrar la base. Se ordenan por clave: es única, no se
+/// edita, y eso alcanza para que el motor de cobro desempate siempre igual.
+model TipoPago {
+  id          String  @id @default(cuid())
+  hash        String  @unique
+  clave       String  @unique
+  nombre      String
+  descripcion String?
+  activo      Boolean @default(true)
+
+  tarifas Tarifa[]
+}
+
+/// Si se repite, ¿cada cuánto? `meses` es la pieza que usa el motor de
+/// cobro: no pregunta "¿es trimestral?", pregunta cuántos meses cubre.
+/// Agregar "Bimestral" es sembrar una fila con meses = 2. Y de ahí sale
+/// también el orden de la lista, sin guardarlo aparte.
+model FrecuenciaPago {
+  id          String  @id @default(cuid())
+  hash        String  @unique
+  clave       String  @unique
+  nombre      String
+  descripcion String?
+  meses       Int
+  activo      Boolean @default(true)
+
+  tarifas Tarifa[]
+}
+
+model Locker {
+  id     String  @id @default(cuid())
+  numero Int     @unique
+  activo Boolean @default(true)
+
+  asignaciones AsignacionLocker[]
+}
+
+model AsignacionLocker {
+  id            String @id @default(cuid())
+  lockerId      String
+  inscripcionId String
+  periodoId     String
+
+  locker      Locker      @relation(fields: [lockerId], references: [id], onDelete: Cascade)
+  inscripcion Inscripcion @relation(fields: [inscripcionId], references: [id], onDelete: Cascade)
+  periodo     Periodo     @relation(fields: [periodoId], references: [id], onDelete: Cascade)
+
+  @@unique([lockerId, periodoId])
+}
+
+model Cargo {
+  id                String      @id @default(cuid())
+  inscripcionId     String
+  periodoId         String
+  tipoCursoId       String
+  montoMensualidad  Int
+  montoLockers      Int         @default(0)
+  montoDescuento    Int         @default(0)
+  montoRecargo      Int         @default(0)
+  montoNeto         Int
+  estado            EstadoCargo @default(PENDIENTE)
+  recargoAplicadoEn DateTime?
+  creadoEn          DateTime    @default(now())
+
+  inscripcion      Inscripcion       @relation(fields: [inscripcionId], references: [id], onDelete: Cascade)
+  periodo          Periodo           @relation(fields: [periodoId], references: [id], onDelete: Cascade)
+  tipoCurso        TipoCurso         @relation(fields: [tipoCursoId], references: [id], onDelete: Restrict)
+  pagos            Pago[]
+  solicitudFactura SolicitudFactura?
+
+  // Con precios distintos por curso, un cargo tiene que decir de qué curso
+  // es. Y así alguien puede llevar dos cursos a la vez, cada uno con su cobro.
+  @@unique([inscripcionId, periodoId, tipoCursoId])
+}
+
+model Pago {
+  id                    String     @id @default(cuid())
+  cargoId               String
+  metodo                MetodoPago
+  montoCobrado          Int
+  montoComision         Int        @default(0)
+  montoNeto             Int
+  referencia            String?
+  comprobanteUrl        String?
+  stripePaymentIntentId String?
+  estado                EstadoPago @default(CONFIRMADO)
+  registradoPorId       String?
+  validadoPorId         String?
+  fechaPago             DateTime   @default(now())
+
+  cargo         Cargo    @relation(fields: [cargoId], references: [id], onDelete: Cascade)
+  registradoPor Usuario? @relation("PagoRegistradoPor", fields: [registradoPorId], references: [id])
+  validadoPor   Usuario? @relation("PagoValidadoPor", fields: [validadoPorId], references: [id])
+}
+
+model SolicitudFactura {
+  id            String        @id @default(cuid())
+  cargoId       String        @unique
+  rfc           String
+  razonSocial   String
+  codigoPostal  String
+  regimenFiscal String
+  usoCfdi       String
+  estado        EstadoFactura @default(SOLICITADA)
+  notas         String?
+  atendidaPorId String?
+  creadoEn      DateTime      @default(now())
+
+  cargo       Cargo    @relation(fields: [cargoId], references: [id], onDelete: Cascade)
+  atendidaPor Usuario? @relation(fields: [atendidaPorId], references: [id])
+}
+
+model Asistencia {
+  id              String   @id @default(cuid())
+  inscripcionId   String
+  fecha           DateTime
+  registradaPorId String
+
+  inscripcion   Inscripcion @relation(fields: [inscripcionId], references: [id], onDelete: Cascade)
+  registradaPor Usuario     @relation(fields: [registradaPorId], references: [id])
+
+  @@unique([inscripcionId, fecha])
+}
