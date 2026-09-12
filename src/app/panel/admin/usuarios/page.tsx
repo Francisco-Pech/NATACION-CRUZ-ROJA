@@ -1,3 +1,4 @@
+import Link from 'next/link'
 import { prisma } from '@/lib/db'
 import { leerSesion } from '@/lib/sesion'
 import { esRoot, esCorreoDeRoot } from '@/lib/roles'
@@ -11,7 +12,18 @@ const DESCRIPCION_ROL: Record<string, string> = {
   PROFESOR: 'Solo escanear el QR y pasar asistencia',
 }
 
-export default async function Usuarios() {
+const PESTANAS = [
+  { clave: 'usuarios', titulo: 'Usuarios' },
+  { clave: 'roles', titulo: 'Roles' },
+] as const
+
+export default async function Usuarios({
+  searchParams,
+}: {
+  searchParams: Promise<{ tab?: string }>
+}) {
+  const pedido = await searchParams
+  const cual = PESTANAS.some((p) => p.clave === pedido.tab) ? pedido.tab! : 'usuarios'
   const yo = await leerSesion()
   const soyRoot = esRoot(yo)
   const usuarios = await prisma.usuario.findMany({ orderBy: [{ activo: 'desc' }, { rol: 'asc' }] })
@@ -24,6 +36,19 @@ export default async function Usuarios() {
         Esta lista es solo del personal.
       </p>
 
+      <nav className="pestanas no-imprimir">
+        {PESTANAS.map((p) => (
+          <Link
+            key={p.clave}
+            href={`/panel/admin/usuarios?tab=${p.clave}`}
+            className={`pestana${cual === p.clave ? ' activa' : ''}`}
+          >
+            {p.titulo}
+          </Link>
+        ))}
+      </nav>
+
+      {cual === 'roles' && (
       <div className="tarjeta">
         <h2>Qué puede hacer cada rol</h2>
         <div className="tabla-ancha">
@@ -40,9 +65,15 @@ export default async function Usuarios() {
         </div>
         <p className="silencio" style={{ fontSize: '.85rem', marginBottom: 0 }}>
           El profesor nunca ve importes, teléfonos, domicilios ni datos fiscales.
+          Solo <strong>Root</strong> puede cambiarle la contraseña a alguien más:
+          hacerlo es poder entrar como esa persona, sin que quede rastro de que no
+          fue ella.
         </p>
       </div>
+      )}
 
+      {cual === 'usuarios' && (
+      <>
       <div className="tarjeta">
         <h2>Dar de alta</h2>
         <FormularioUsuario puedeCrearAdmin={soyRoot} />
@@ -52,13 +83,16 @@ export default async function Usuarios() {
         <div className="tabla-ancha">
           <table>
             <thead>
-              <tr><th>Nombre</th><th>Correo</th><th>Rol</th><th>Estado</th><th>Contraseña</th><th></th></tr>
+              <tr>
+                <th>Nombre</th><th>Correo</th><th>Rol</th><th>Estado</th>
+                {soyRoot && <th>Contraseña</th>}
+                <th></th>
+              </tr>
             </thead>
             <tbody>
               {usuarios.map((u) => {
                 // La cuenta de Root no se toca desde aquí, salvo por él mismo.
                 const esLaDeRoot = esCorreoDeRoot(u.email)
-                const intocable = esLaDeRoot && !soyRoot
 
                 return (
                 <tr key={u.id} style={{ opacity: u.activo ? 1 : 0.55 }}>
@@ -77,11 +111,11 @@ export default async function Usuarios() {
                       {u.activo ? 'activo' : 'sin acceso'}
                     </span>
                   </td>
-                  <td>
-                    {intocable
-                      ? <span className="silencio" style={{ fontSize: '.8rem' }}>—</span>
-                      : <FormularioClave id={u.id} />}
-                  </td>
+                  {soyRoot && (
+                    <td>
+                      <FormularioClave id={u.id} nombre={u.nombre} />
+                    </td>
+                  )}
                   <td className="derecha">
                     {u.id === yo?.id || esLaDeRoot ? (
                       <span className="silencio" style={{ fontSize: '.8rem' }}>—</span>
@@ -102,8 +136,11 @@ export default async function Usuarios() {
         </div>
         <p className="silencio" style={{ fontSize: '.85rem', marginBottom: 0 }}>
           Nadie puede quitarse el acceso a sí mismo: dejaría el sistema sin quien entre.
+          {!soyRoot && ' Las contraseñas las cambia Root.'}
         </p>
       </div>
+      </>
+      )}
     </>
   )
 }

@@ -3,7 +3,8 @@
 import { revalidatePath } from 'next/cache'
 import { prisma } from '@/lib/db'
 import { hashPassword } from '@/lib/auth'
-import { esCorreoDeRoot, puedeAsignarRol, esRoot } from '@/lib/roles'
+import { esCorreoDeRoot, puedeAsignarRol } from '@/lib/roles'
+import { validarClaves } from '@/lib/claves'
 import { exigirAdministrador, exigirRoot, falla, texto, numero } from './guardas'
 import type { Resultado } from './guardas'
 import { calcularFechaLimite } from '@/lib/dias-habiles'
@@ -46,7 +47,8 @@ export async function guardarUsuario(_previo: string | null, datos: FormData): P
   const rol = texto(datos, 'rol') as Rol
 
   if (!nombre || !email) return 'Falta el nombre o el correo.'
-  if (clave.length < 8) return 'La contraseña debe tener al menos 8 caracteres.'
+  const malaClave = validarClaves(clave, String(datos.get('confirmacion') ?? ''))
+  if (malaClave) return malaClave
   if (!Object.values(Rol).includes(rol)) return 'Rol no válido.'
 
   // Root se reconoce por su correo. Si alguien pudiera darse de alta con él,
@@ -78,18 +80,22 @@ export async function cambiarEstadoUsuario(datos: FormData) {
   revalidatePath('/panel/admin/usuarios')
 }
 
+/**
+ * Cambia la contraseña de alguien. Solo Root.
+ *
+ * Cambiarle la contraseña a otro es poder entrar como él: un Administrador
+ * podía tomar la cuenta de otro Administrador, o la de cualquiera, sin que
+ * quedara rastro de que no fue esa persona quien entró. Quien la necesita
+ * de vuelta se la pide a Root.
+ */
 export async function restablecerClave(_previo: string | null, datos: FormData): Promise<string | null> {
-  const actor = await exigirAdministrador()
+  await exigirRoot()
   const id = texto(datos, 'id')
   const clave = String(datos.get('clave') ?? '')
-  if (clave.length < 8) return 'La contraseña debe tener al menos 8 caracteres.'
+  const mala = validarClaves(clave, String(datos.get('confirmacion') ?? ''))
+  if (mala) return mala
 
   const destino = await prisma.usuario.findUniqueOrThrow({ where: { id } })
-  // Cambiarle la contraseña a Root es adueñarse de la cuenta. Solo Root.
-  if (esCorreoDeRoot(destino.email) && !esRoot(actor)) {
-    return 'No puedes cambiar la contraseña de esa cuenta.'
-  }
-
   await prisma.usuario.update({ where: { id }, data: { passwordHash: await hashPassword(clave) } })
   revalidatePath('/panel/admin/usuarios')
   return null

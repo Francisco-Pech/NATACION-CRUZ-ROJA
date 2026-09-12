@@ -1,11 +1,11 @@
 'use client'
 
-import { useActionState, useState } from 'react'
+import { useActionState } from 'react'
 import { guardarUsuario } from '../acciones'
+import CampoClave from '@/components/CampoClave'
 
 export default function FormularioUsuario({ puedeCrearAdmin }: { puedeCrearAdmin: boolean }) {
   const [error, accion, enviando] = useActionState(guardarUsuario, null)
-  const [verClave, setVerClave] = useState(false)
 
   return (
     <form action={accion}>
@@ -26,25 +26,14 @@ export default function FormularioUsuario({ puedeCrearAdmin }: { puedeCrearAdmin
             {puedeCrearAdmin && <option value="ADMINISTRADOR">Administrador</option>}
           </select>
         </div>
-        <div style={{ flex: '2 1 200px' }}>
-          <label htmlFor="clave">Contraseña</label>
-          <div className="campo-con-boton">
-            <input id="clave" name="clave" type={verClave ? 'text' : 'password'} minLength={8} required />
-            <button
-              type="button" className="ver-clave" onClick={() => setVerClave((v) => !v)}
-              aria-pressed={verClave} aria-label={verClave ? 'Ocultar' : 'Mostrar'}
-            >
-              {verClave ? 'Ocultar' : 'Mostrar'}
-            </button>
-          </div>
-        </div>
+        <CampoClave deshabilitado={enviando} />
         <button className="boton" type="submit" disabled={enviando}>
           {enviando ? 'Guardando…' : 'Crear'}
         </button>
       </div>
       {error && <div className="error">{error}</div>}
       <p className="silencio" style={{ fontSize: '.82rem', marginBottom: 0 }}>
-        Mínimo 8 caracteres. Anótala y entrégasela en persona: el sistema no manda correos.
+        Mínimo 8 caracteres. Anótala y entrégasela en persona: el sistema no manda correos. El botón de generar evita letras que se confundan al leerlas —ni ele, ni uno, ni o, ni cero.
       </p>
     </form>
   )

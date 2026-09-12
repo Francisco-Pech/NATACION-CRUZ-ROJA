@@ -2,6 +2,7 @@ import 'dotenv/config'
 import { PrismaClient } from '@prisma/client'
 import { formatearFolio, generarTokenQR } from '../src/lib/folio.ts'
 import { cabeUnoMas } from '../src/lib/cupos'
+import { hashPassword } from '../src/lib/auth'
 
 /**
  * Alumnos inventados para trabajar en local.
@@ -39,7 +40,37 @@ const ALUMNOS_DEMO = [
   ['Sebastián Noh Cahuich', 'NINOS', 'NINOS'],
 ] as const
 
+/**
+ * Los tres usuarios de prueba, uno por rol.
+ *
+ * La contraseña sale de `DEMO_PASSWORD`, nunca del código: aunque estas
+ * cuentas sean de mentira, una contraseña escrita aquí acaba funcionando en
+ * algún despliegue real que corrió este seeder sin pensarlo.
+ */
+async function usuariosDePrueba(prisma: PrismaClient) {
+  const clave = process.env.DEMO_PASSWORD ?? ''
+  if (clave.length < 8) {
+    console.log('  Sin usuarios de prueba: pon DEMO_PASSWORD en el .env (8+ caracteres).')
+    return
+  }
+  const passwordHash = await hashPassword(clave)
+  const gente = [
+    { nombre: 'Administrador de prueba', email: 'admin@example.com', rol: 'ADMINISTRADOR' as const },
+    { nombre: 'Capturista de prueba', email: 'capturista@example.com', rol: 'CAPTURISTA' as const },
+    { nombre: 'Profesor de prueba', email: 'profesor@example.com', rol: 'PROFESOR' as const },
+  ]
+  for (const u of gente) {
+    await prisma.usuario.upsert({
+      where: { email: u.email },
+      update: { nombre: u.nombre, rol: u.rol, activo: true, passwordHash },
+      create: { ...u, passwordHash },
+    })
+  }
+  console.log(`  ${gente.length} usuarios de prueba (admin, capturista y profesor @example.com)`)
+}
+
 async function main() {
+  await usuariosDePrueba(prisma)
   console.log('Sembrando alumnos de demostración…')
 
   const ciclo = await prisma.cicloAnual.findUnique({ where: { anio: ANIO } })
