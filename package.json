@@ -14,6 +14,7 @@
     "db:seed": "prisma generate && tsx prisma/seed.ts",
     "db:seed:demo": "prisma generate && tsx prisma/seed-demo.ts",
     "db:seed:alumnos": "prisma generate && tsx prisma/seed-alumnos.ts",
+    "db:seed:pagado": "prisma generate && tsx prisma/seed-pagado.ts",
     "prebuild": "prisma generate",
     "predev": "prisma generate",
     "pretest": "prisma generate",
