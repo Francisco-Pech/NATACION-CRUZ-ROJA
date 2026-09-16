@@ -87,3 +87,32 @@ export function pasaElTope(
   if (lugar === -1) return false
   return lugar + 1 > maxMeses
 }
+
+/**
+ * Qué meses se le generan a quien acaba de inscribirse.
+ *
+ * Los que le quedan del ciclo, del mes en curso a diciembre. Antes los
+ * cargos solo nacían de la cobranza mensual, y un alumno recién inscrito
+ * aparecía sin deber nada hasta que alguien corriera el mes: no tenía qué
+ * pagar aunque quisiera.
+ *
+ * Lo que ya pasó no se cobra —a quien llega en septiembre nadie le cobra
+ * enero— y un ciclo que todavía no empieza va completo. Uno que ya cerró
+ * no genera nada: inscribirse es para adelante.
+ *
+ * Esto dice cuáles meses se intentan, no cuáles se cobran. De cada uno
+ * sigue decidiendo el motor: la temporada del curso, su tarifa, cada
+ * cuánto se cobra y el máximo de meses que dura.
+ *
+ * @param anioDelCiclo el año al que se está inscribiendo
+ * @param hoy          la fecha de Cancún, "AAAA-MM-DD"
+ */
+export function mesesAlInscribir(anioDelCiclo: number, hoy: string): number[] {
+  const [anioHoy, mesHoy] = hoy.split('-').map(Number)
+  if (anioDelCiclo < anioHoy) return []
+
+  const desde = anioDelCiclo > anioHoy ? 1 : mesHoy
+  const meses: number[] = []
+  for (let mes = desde; mes <= 12; mes++) meses.push(mes)
+  return meses
+}

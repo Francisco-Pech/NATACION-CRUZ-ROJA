@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { tocaCobrar, alcanzoElTope, pasaElTope } from '@/lib/cobros'
+import { tocaCobrar, alcanzoElTope, pasaElTope, mesesAlInscribir } from '@/lib/cobros'
 
 const UNICO = null
 
@@ -158,5 +158,33 @@ describe('pasaElTope', () => {
     const cruzando = [mes('2026-12'), mes('2027-01'), mes('2027-02')]
     expect(pasaElTope(cruzando, '2027-01', 2)).toBe(false)
     expect(pasaElTope(cruzando, '2027-02', 2)).toBe(true)
+  })
+})
+
+describe('mesesAlInscribir', () => {
+  // Quien entra en septiembre paga lo que le queda del año, no el año
+  // entero: nadie cobra enero a quien llegó después.
+  it('del mes en curso a diciembre', () => {
+    expect(mesesAlInscribir(2026, '2026-09-15')).toEqual([9, 10, 11, 12])
+  })
+
+  it('el último mes del año deja un solo mes', () => {
+    expect(mesesAlInscribir(2026, '2026-12-28')).toEqual([12])
+  })
+
+  it('en enero es el año completo', () => {
+    expect(mesesAlInscribir(2026, '2026-01-02')).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12])
+  })
+
+  // Quien se apunta desde hoy al ciclo que entra lo hace completo: ese año
+  // todavía no empieza, así que no hay meses que ya se hayan ido.
+  it('un ciclo que todavía no empieza va completo', () => {
+    expect(mesesAlInscribir(2027, '2026-09-15')).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12])
+  })
+
+  // Un ciclo que ya cerró no genera nada: se inscribe para adelante, y
+  // fabricarle doce meses de deuda de un año ido sería inventar cobranza.
+  it('un ciclo que ya pasó no genera nada', () => {
+    expect(mesesAlInscribir(2025, '2026-09-15')).toEqual([])
   })
 })

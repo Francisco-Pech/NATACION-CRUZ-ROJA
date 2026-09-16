@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterAll } from 'vitest'
+import { describe, it, expect, beforeAll, beforeEach, afterAll } from 'vitest'
 import { prisma } from '@/lib/db'
 import { nuevoHash } from '@/lib/ids'
 import { inscribirAlumno } from '@/lib/servicios/inscripciones'
@@ -30,6 +30,14 @@ async function limpiar() {
 
 const HORA_PRUEBA = '23:15'
 
+/** El tope de meses que traía el curso del seeder, para devolvérselo. */
+let topeOriginal: number | null = null
+
+beforeAll(async () => {
+  const curso = await prisma.tipoCurso.findUnique({ where: { clave: 'ADULTOS' } })
+  topeOriginal = curso?.maxMeses ?? null
+})
+
 /** Inscribe y le da curso: sin curso no hay cargo que probar. */
 async function inscritoConCurso(nombre: string) {
   const sesion = await sesionDePrueba()
@@ -43,7 +51,9 @@ async function sesionDePrueba() {
   // algo que no tiene que ver con lo que prueban.
   const curso = await prisma.tipoCurso.update({
     where: { clave: 'ADULTOS' },
-    data: { modoFecha: 'RECURRENTE' },
+    // Sin tope de meses tampoco: si desde el panel le pusieron uno, estas
+    // pruebas dejarían de generar cargos a media corrida.
+    data: { modoFecha: 'RECURRENTE', maxMeses: null },
   })
   const horario = await prisma.horario.upsert({
     where: { horaInicio_horaFin: { horaInicio: HORA_PRUEBA, horaFin: '23:45' } },
@@ -84,9 +94,38 @@ beforeEach(async () => {
   })
 })
 
-afterAll(async () => { await limpiar(); await prisma.$disconnect() })
+afterAll(async () => {
+  await limpiar()
+  await prisma.tipoCurso.update({ where: { clave: 'ADULTOS' }, data: { maxMeses: topeOriginal } })
+  await prisma.$disconnect()
+})
 
 describe('inscribirAlumno', () => {
+  // Antes los cargos solo nacían de la cobranza del mes, y quien acababa
+  // de inscribirse aparecía sin deber nada: no tenía qué pagar aunque
+  // quisiera.
+  it('le genera los meses que le quedan del ciclo', async () => {
+    // Un segundo mes, para ver que no se queda en el primero que encuentra.
+    await prisma.periodo.create({
+      data: {
+        cicloAnualId: cicloId, mes: 7, clave: `${ANIO}-07`,
+        fechaLimite: new Date(`${ANIO}-07-06T23:59:59`),
+      },
+    })
+
+    const i = await inscritoConCurso('Recién inscrito')
+    const cargos = await prisma.cargo.findMany({
+      where: { inscripcionId: i.id }, include: { periodo: true },
+    })
+
+    expect(cargos.map((c) => c.periodo.mes).sort((a, b) => a - b)).toEqual([3, 7])
+  })
+
+  it('sin curso no le genera ningún mes', async () => {
+    const i = await inscribirAlumno({ nombreCompleto: 'Sin curso', cicloAnualId: cicloId })
+    expect(await prisma.cargo.count({ where: { inscripcionId: i.id } })).toBe(0)
+  })
+
   it('da de alta con solo el nombre completo', async () => {
     const i = await inscribirAlumno({ nombreCompleto: 'Solo Nombre', cicloAnualId: cicloId })
     expect(i.alumno.nombreCompleto).toBe('Solo Nombre')

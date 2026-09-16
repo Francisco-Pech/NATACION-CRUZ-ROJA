@@ -1,5 +1,8 @@
 import { prisma } from '@/lib/db'
 import { generarFolio, generarTokenQR } from '@/lib/folio'
+import { mesesAlInscribir } from '@/lib/cobros'
+import { hoyEnCancun } from '@/lib/zona'
+import { generarCargosDelPeriodo } from '@/lib/servicios/periodos'
 
 /** Lo que recepción captura al dar de alta a alguien. */
 export type Alta = {
@@ -49,7 +52,7 @@ export type Factura = {
 export async function inscribirAlumno(alta: Alta) {
   const ciclo = await prisma.cicloAnual.findUniqueOrThrow({ where: { id: alta.cicloAnualId } })
 
-  return prisma.$transaction(async (tx) => {
+  const inscripcion = await prisma.$transaction(async (tx) => {
     const alumno = await tx.alumno.create({
       data: {
         nombreCompleto: alta.nombreCompleto,
@@ -105,6 +108,39 @@ export async function inscribirAlumno(alta: Alta) {
 
     return inscripcion
   })
+
+  await generarSusMeses(inscripcion.id, ciclo)
+  return inscripcion
+}
+
+/**
+ * Le crea al recién inscrito los meses que le quedan del ciclo.
+ *
+ * Va fuera de la transacción del alta a propósito: si algo fallara al
+ * generar —una tarifa sin capturar, un mes que no existe— el alumno ya
+ * quedó inscrito con su folio, y sus meses se pueden crear después desde
+ * su ficha. Al revés se perdería el alta entera por un precio que nadie
+ * puso.
+ *
+ * Qué se cobra de cada mes lo sigue decidiendo el motor de siempre: la
+ * temporada del curso, su tarifa, cada cuánto se cobra y cuántos meses
+ * dura. Esto solo dice qué meses se le intentan.
+ */
+async function generarSusMeses(inscripcionId: string, ciclo: { id: string; anio: number }) {
+  const meses = mesesAlInscribir(ciclo.anio, hoyEnCancun())
+  if (meses.length === 0) return
+
+  const periodos = await prisma.periodo.findMany({
+    where: { cicloAnualId: ciclo.id, mes: { in: meses } },
+    orderBy: { mes: 'asc' },
+    select: { id: true },
+  })
+
+  // En orden y de uno en uno: una frecuencia trimestral necesita ver el
+  // cargo del mes anterior para saber si le toca cobrar este.
+  for (const periodo of periodos) {
+    await generarCargosDelPeriodo(periodo.id, inscripcionId)
+  }
 }
 
 /**
