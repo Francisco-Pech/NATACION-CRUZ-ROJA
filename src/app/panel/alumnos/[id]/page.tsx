@@ -43,10 +43,6 @@ export default async function FichaAlumno({ params }: { params: Promise<{ id: st
 
       <div className="rejilla">
         <div className="tarjeta">
-          <div className="etiqueta">Categoría</div>
-          <div>{alumno.categoria === 'NINOS' ? 'Niños' : 'General'}</div>
-        </div>
-        <div className="tarjeta">
           <div className="etiqueta">Curso</div>
           <div>{cursos.length === 0 ? "Sin asignar" : cursos.join(", ")}</div>
         </div>

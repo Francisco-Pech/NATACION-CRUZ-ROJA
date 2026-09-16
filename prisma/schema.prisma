@@ -7,12 +7,6 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-enum Rol {
-  ADMINISTRADOR
-  CAPTURISTA
-  PROFESOR
-}
-
 enum Categoria {
   NINOS
   GENERAL
@@ -85,14 +79,39 @@ model Usuario {
   nombre       String
   email        String   @unique
   passwordHash String
-  rol          Rol
+  /// No hay usuario sin rol: es lo que decide qué puede hacer.
+  rolId        String
   activo       Boolean  @default(true)
   creadoEn     DateTime @default(now())
 
-  pagosRegistrados  Pago[]             @relation("PagoRegistradoPor")
-  pagosValidados    Pago[]             @relation("PagoValidadoPor")
+  pagosRegistrados  Pago[]                   @relation("PagoRegistradoPor")
+  pagosValidados    Pago[]                   @relation("PagoValidadoPor")
   asistencias       Asistencia[]
   facturasAtendidas SolicitudFactura[]
+  rol               Rol                      @relation(fields: [rolId], references: [id], onDelete: Restrict)
+  lockers           LockerDeProfesor[]
+  grupos            ProfesorDeGrupo[]
+  verificaciones    VerificacionCredencial[]
+
+  @@index([rolId])
+}
+
+/// Qué puede hacer un grupo de personas.
+///
+/// Se crean y se editan desde el panel. Los permisos, en cambio, viven en
+/// el código —`src/lib/permisos.ts`—: cada uno corresponde a algo que de
+/// verdad se protege, e inventar uno aquí no abriría nada.
+model Rol {
+  id          String   @id @default(cuid())
+  hash        String   @unique
+  /// No se edita: de ella se agarran el seeder y la migración.
+  clave       String   @unique
+  nombre      String
+  descripcion String?
+  permisos    String[] @default([])
+  activo      Boolean  @default(true)
+
+  usuarios Usuario[]
 }
 
 model Alumno {
@@ -108,11 +127,20 @@ model Alumno {
   categoria                  Categoria @default(GENERAL)
   fotoUrl                    String?
 
-  rfc           String?
-  razonSocial   String?
-  codigoPostal  String?
-  regimenFiscal String?
-  usoCfdi       String?
+  /// ¿Pide factura? Los datos de abajo solo se exigen cuando esto es cierto.
+  /// No se deduce de que haya RFC: alguien puede dejarlo a medias.
+  factura            Boolean   @default(false)
+  rfc                String?
+  razonSocial        String?
+  codigoPostal       String?
+  regimenFiscal      String?
+  usoCfdi            String?
+  /// La constancia de situación fiscal, guardada aquí y no en una carpeta:
+  /// es un documento privado y así solo se llega a él por una ruta que
+  /// exige sesión, sin archivos sueltos que se puedan servir por error.
+  constanciaPdf      Bytes?
+  constanciaNombre   String?
+  constanciaSubidaEn DateTime?
 
   datosCompletos Boolean  @default(false)
   creadoEn       DateTime @default(now())
@@ -132,23 +160,33 @@ model CicloAnual {
 }
 
 model Inscripcion {
-  id           String            @id @default(cuid())
-  alumnoId     String
-  cicloAnualId String
-  descuentoId  String?
-  folio        String            @unique
-  tokenQR      String            @unique
-  estado       EstadoInscripcion @default(ACTIVA)
-  creadoEn     DateTime          @default(now())
+  id             String            @id @default(cuid())
+  alumnoId       String
+  cicloAnualId   String
+  descuentoId    String?
+  /// `CR` + el año + ocho caracteres al azar. Se genera al dar de alta y
+  /// ya no cambia: es como se nombra la inscripción en papel.
+  folio          String            @unique
+  /// Lo que abre el estado de cuenta sin contraseña. Va aparte del folio a
+  /// propósito: el folio se imprime y se dicta en voz alta.
+  tokenQR        String            @unique
+  estado         EstadoInscripcion @default(ACTIVA)
+  /// Hasta cuándo le dura el descuento a este alumno. Vacías: sin límite.
+  /// Va aquí y no en el catálogo porque una cortesía de un día y un INAPAM
+  /// de por vida son el mismo descuento con vigencias distintas.
+  descuentoDesde DateTime?
+  descuentoHasta DateTime?
+  creadoEn       DateTime          @default(now())
 
   alumno    Alumno     @relation(fields: [alumnoId], references: [id], onDelete: Cascade)
   ciclo     CicloAnual @relation(fields: [cicloAnualId], references: [id], onDelete: Cascade)
   descuento Descuento? @relation(fields: [descuentoId], references: [id])
 
-  sesiones    InscripcionSesion[]
-  cargos      Cargo[]
-  lockers     AsignacionLocker[]
-  asistencias Asistencia[]
+  sesiones       InscripcionSesion[]
+  cargos         Cargo[]
+  lockers        AsignacionLocker[]
+  asistencias    Asistencia[]
+  verificaciones VerificacionCredencial[]
 
   @@unique([alumnoId, cicloAnualId])
 }
@@ -303,12 +341,17 @@ model TipoCurso {
   descripcion String?
   /// Cómo se repiten sus temporadas. Las fechas viven en `temporadas`.
   modoFecha   ModoFechaCurso @default(RECURRENTE)
+  /// Cuántos meses se le cobra este curso a un alumno, en toda su vida.
+  /// Llegado el tope ya no se le generan cargos, aunque el curso siga
+  /// corriendo en el calendario. Vacío: sin tope.
+  maxMeses    Int?           @default(3)
   activo      Boolean        @default(true)
 
   sesiones   Sesion[]
   tarifas    Tarifa[]
   cargos     Cargo[]
   temporadas TemporadaCurso[]
+  profesores ProfesorDeGrupo[]
 }
 
 /// Un tramo del año en que el curso corre. Según el modo del curso se
@@ -355,8 +398,9 @@ model Horario {
   descripcion String?
   activo      Boolean @default(true)
 
-  sesiones  Sesion[]
-  laborales FranjaLaboral[]
+  sesiones   Sesion[]
+  laborales  FranjaLaboral[]
+  profesores ProfesorDeGrupo[]
 
   @@unique([horaInicio, horaFin])
 }
@@ -376,10 +420,6 @@ model Sesion {
   diaSemana        Int
   /// Una nota libre de esa clase. Opcional.
   descripcion      String?
-  cupoMaximo       Int     @default(35)
-  /// Tolerancia sobre el cupo: del cupo a cupo+extras se avisa pero se deja
-  /// pasar. Pasando los extras, no.
-  extras           Int     @default(10)
   activo           Boolean @default(true)
 
   tipoCurso TipoCurso       @relation(fields: [tipoCursoId], references: [id], onDelete: Cascade)
@@ -389,7 +429,9 @@ model Sesion {
 
   inscritos InscripcionSesion[]
 
-  @@unique([tipoCursoId, horarioId, diaSemana])
+  /// Un renglón por curso, día y horario **dentro de cada temporada**: así
+  /// la rejilla de 2027 se puede armar sin chocar con la de 2026.
+  @@unique([temporadaCursoId, tipoCursoId, horarioId, diaSemana])
   @@index([temporadaCursoId])
   @@index([franjaLaboralId])
 }
@@ -444,6 +486,25 @@ model Locker {
   activo Boolean @default(true)
 
   asignaciones AsignacionLocker[]
+  deProfesor   LockerDeProfesor?
+}
+
+/// Un locker apartado para un profesor.
+///
+/// Va aparte de `AsignacionLocker` porque es otra cosa: no cuelga de un
+/// periodo ni genera cargo. Se aparta una vez y se queda hasta que alguien
+/// lo libere, para que nadie tenga que reasignarlo cada mes.
+model LockerDeProfesor {
+  id        String   @id @default(cuid())
+  /// Uno por locker: si ya es de un profesor, no puede ser de otro.
+  lockerId  String   @unique
+  usuarioId String
+  creadoEn  DateTime @default(now())
+
+  locker  Locker  @relation(fields: [lockerId], references: [id], onDelete: Cascade)
+  usuario Usuario @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+
+  @@index([usuarioId])
 }
 
 model AsignacionLocker {
@@ -460,18 +521,27 @@ model AsignacionLocker {
 }
 
 model Cargo {
-  id                String      @id @default(cuid())
-  inscripcionId     String
-  periodoId         String
-  tipoCursoId       String
-  montoMensualidad  Int
-  montoLockers      Int         @default(0)
-  montoDescuento    Int         @default(0)
-  montoRecargo      Int         @default(0)
-  montoNeto         Int
-  estado            EstadoCargo @default(PENDIENTE)
-  recargoAplicadoEn DateTime?
-  creadoEn          DateTime    @default(now())
+  id                  String      @id @default(cuid())
+  inscripcionId       String
+  periodoId           String
+  tipoCursoId         String
+  montoMensualidad    Int
+  montoLockers        Int         @default(0)
+  montoDescuento      Int         @default(0)
+  montoRecargo        Int         @default(0)
+  montoNeto           Int
+  estado              EstadoCargo @default(PENDIENTE)
+  recargoAplicadoEn   DateTime?
+  /// El comprobante que sube el alumno desde su página: la foto del ticket
+  /// de OXXO o el PDF de la transferencia. Cuelga del cargo y no del pago
+  /// porque se sube antes de que exista pago alguno — es lo que el
+  /// mostrador mira para anotarlo. Guardado aquí y no en una carpeta: trae
+  /// nombre y banco de quien pagó, y así solo sale por una ruta con sesión.
+  comprobanteImagen   Bytes?
+  comprobanteTipo     String?
+  comprobanteNombre   String?
+  comprobanteSubidoEn DateTime?
+  creadoEn            DateTime    @default(now())
 
   inscripcion      Inscripcion       @relation(fields: [inscripcionId], references: [id], onDelete: Cascade)
   periodo          Periodo           @relation(fields: [periodoId], references: [id], onDelete: Cascade)
@@ -531,4 +601,78 @@ model Asistencia {
   registradaPor Usuario     @relation(fields: [registradaPorId], references: [id])
 
   @@unique([inscripcionId, fecha])
+}
+
+/// Qué grupos imparte un profesor. Un grupo es un curso a una hora: quien da
+/// Adultos de 6 lo da todos los días en que ese curso corre a esa hora.
+///
+/// Un grupo puede tener más de un profesor: una suplencia no debería obligar
+/// a reescribir el horario.
+model ProfesorDeGrupo {
+  id          String   @id @default(cuid())
+  usuarioId   String
+  tipoCursoId String
+  horarioId   String
+  creadoEn    DateTime @default(now())
+
+  usuario   Usuario   @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+  tipoCurso TipoCurso @relation(fields: [tipoCursoId], references: [id], onDelete: Cascade)
+  horario   Horario   @relation(fields: [horarioId], references: [id], onDelete: Cascade)
+
+  @@unique([usuarioId, tipoCursoId, horarioId])
+  @@index([usuarioId])
+}
+
+/// Que el profesor vio la credencial del alumno ese mes. Una por alumno y
+/// por mes: se pide al menos una vez, no cada clase.
+///
+/// No bloquea la lista. El alumno sin verificar sale señalado, pero quien
+/// olvidó su credencial el día 1 no puede quedarse sin asistencias todo el
+/// mes.
+model VerificacionCredencial {
+  id              String   @id @default(cuid())
+  inscripcionId   String
+  anio            Int
+  mes             Int
+  verificadaPorId String
+  /// ESCANEO cuando se leyó el QR; FOLIO cuando se tecleó. No es lo mismo:
+  /// el escaneo prueba que el papel estaba ahí, el folio se puede dictar.
+  como            String
+  creadoEn        DateTime @default(now())
+
+  inscripcion   Inscripcion @relation(fields: [inscripcionId], references: [id], onDelete: Cascade)
+  verificadaPor Usuario     @relation(fields: [verificadaPorId], references: [id])
+
+  @@unique([inscripcionId, anio, mes])
+}
+
+/// El recado de quien no pudo pagar en línea.
+///
+/// No es un formulario de contacto: existe para que la delegación le
+/// devuelva la llamada a esa persona. Se guarda aquí y no solo se manda por
+/// correo porque un correo que no sale —servicio caído, buzón lleno, clave
+/// vencida— es una persona que se quedó sin poder pagar y sin que nadie se
+/// entere.
+///
+/// La imagen va en la base, como el comprobante: suele ser la captura del
+/// error con su nombre y su banco a la vista, y así solo sale por una ruta
+/// con sesión.
+model ReporteDePago {
+  id         String   @id @default(cuid())
+  /// El folio con el que venía intentando pagar, si es que llegó a tenerlo.
+  folio      String?
+  nombre     String
+  correo     String
+  /// Ya con la lada, como se marca: "+52 9981234567".
+  telefono   String
+  mensaje    String
+  imagen     Bytes?
+  imagenTipo String?
+  /// Si además se logró avisar por correo. En falso, alguien tiene que
+  /// venir a mirar esta tabla.
+  avisadoPorCorreo Boolean @default(false)
+  atendido   Boolean  @default(false)
+  creadoEn   DateTime @default(now())
+
+  @@index([atendido, creadoEn])
 }

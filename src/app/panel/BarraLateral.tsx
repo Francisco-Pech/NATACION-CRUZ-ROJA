@@ -7,12 +7,14 @@ import {
   IconoMenu, IconoAnterior, IconoSiguiente,
 } from '@/components/Iconos'
 
-const OPERACION = [
-  { href: '/panel', texto: 'Tablero', Icono: IconoTablero },
-  { href: '/panel/alumnos', texto: 'Alumnos', Icono: IconoAlumnos },
-  { href: '/panel/pagos', texto: 'Cobranza', Icono: IconoCobranza },
-  { href: '/panel/lockers', texto: 'Lockers', Icono: IconoLockers },
-]
+/** El dibujo de cada sección. Cuáles se ven lo decide `enlacesDelPanel`. */
+const ICONOS: Record<string, typeof IconoTablero> = {
+  '/panel': IconoTablero,
+  '/panel/alumnos': IconoAlumnos,
+  '/panel/pagos': IconoCobranza,
+  '/panel/lockers': IconoLockers,
+  '/panel/admin': IconoAjustes,
+}
 
 const RECUERDO = 'lateral-encogida'
 
@@ -30,11 +32,12 @@ const RECUERDO = 'lateral-encogida'
  */
 export default function BarraLateral({
   usuario,
-  esAdmin,
+  enlaces: secciones,
   salir,
 }: {
   usuario: { nombre: string; rol: string }
-  esAdmin: boolean
+  /** Solo las secciones que esta persona puede abrir. */
+  enlaces: Array<{ href: string; texto: string }>
   salir: () => Promise<void>
 }) {
   const [encogida, setEncogida] = useState(false)
@@ -61,12 +64,7 @@ export default function BarraLateral({
     })
   }
 
-  const enlaces = [
-    ...OPERACION,
-    ...(esAdmin
-      ? [{ href: '/panel/admin', texto: 'Panel de control', Icono: IconoAjustes }]
-      : []),
-  ]
+  const enlaces = secciones.map((s) => ({ ...s, Icono: ICONOS[s.href] ?? IconoTablero }))
 
   return (
     <>
@@ -112,9 +110,12 @@ export default function BarraLateral({
 
         <nav className="lateral-nav">
           <span className="lateral-titulo">Operación</span>
-          {enlaces.map(({ href, texto, Icono }, i) => (
+          {enlaces.map(({ href, texto, Icono }) => (
             <div key={href}>
-              {i === OPERACION.length && <span className="lateral-titulo">Configuración</span>}
+              {/* El corte se decide por la sección, no por su posición: con
+                  la lista armada de permisos, el índice cambia según quién
+                  entre y el título caía en cualquier lado. */}
+              {href === '/panel/admin' && <span className="lateral-titulo">Configuración</span>}
               <Link href={href} title={texto} onClick={() => setAbiertaEnMovil(false)}>
                 <Icono />
                 <span>{texto}</span>

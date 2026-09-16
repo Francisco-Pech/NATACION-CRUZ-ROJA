@@ -1,3 +1,6 @@
+import type { TipoDescuento } from '@prisma/client'
+import { pesos } from '@/lib/formato'
+
 /**
  * Las reglas de un descuento: hasta cuándo vale y cuántas veces se puede dar.
  *
@@ -45,4 +48,55 @@ export function validarLimite(limite: number | null, entregados: number): string
     }.`
   }
   return null
+}
+
+/**
+ * Cuánto rebaja un descuento, escrito como se lee.
+ *
+ * El monto fijo vive en centavos, como todo el dinero del sistema: sacarlo
+ * tal cual a la pantalla convertiría un descuento de cien pesos en uno de
+ * diez mil.
+ */
+export function comoSeLeeDescuento(d: { tipo: TipoDescuento; valor: number }): string {
+  return d.tipo === 'PORCENTAJE' ? `${d.valor}%` : pesos(d.valor)
+}
+
+/**
+ * El nombre con lo que rebaja al lado.
+ *
+ * Quien captura no se sabe de memoria cuánto quita cada uno, y escoger
+ * "Especial" sin saber si son veinte o cien por ciento es escoger a ciegas.
+ */
+export function conValor(d: { nombre: string; tipo: TipoDescuento; valor: number }): string {
+  return `${d.nombre} · ${comoSeLeeDescuento(d)}`
+}
+
+/**
+ * ¿Este descuento le toca al alumno en el mes que se está cobrando?
+ *
+ * Aquí se resuelve "¿cuánto le dura?". La vigencia se guarda en la
+ * inscripción, no en el catálogo: el catálogo dice qué es INAPAM, la
+ * inscripción dice desde y hasta cuándo se le reconoce a esta persona.
+ *
+ * Se pregunta por el mes entero y no por un día, porque el cobro es mensual:
+ * una cortesía del 15 de septiembre cubre la mensualidad de septiembre y se
+ * acaba ahí. Partirle el mes a la mitad daría una cantidad que nadie sabría
+ * explicar en el mostrador.
+ *
+ * Las dos fechas pueden faltar. Sin ninguna vale siempre, que es el caso de
+ * INAPAM: mientras tenga la credencial, la tiene.
+ */
+export function descuentoCubreElMes(
+  vigencia: { desde: Date | null; hasta: Date | null },
+  anio: number,
+  mes: number,
+): boolean {
+  const primerDia = new Date(anio, mes - 1, 1, 0, 0, 0)
+  // El día 0 del mes siguiente es el último del mes que se cobra, sin tener
+  // que saberse cuántos trae febrero.
+  const ultimoDia = new Date(anio, mes, 0, 23, 59, 59)
+
+  if (vigencia.desde && vigencia.desde > ultimoDia) return false
+  if (vigencia.hasta && vigencia.hasta < primerDia) return false
+  return true
 }

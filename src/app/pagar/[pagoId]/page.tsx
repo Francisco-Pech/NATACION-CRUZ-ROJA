@@ -3,22 +3,33 @@ import { prisma } from '@/lib/db'
 import { confirmarCobro, rechazarCobro } from '@/lib/servicios/cobro-en-linea'
 import { ETIQUETA_METODO } from '@/lib/metodos-pago'
 import { pesos } from '@/lib/formato'
-import { usandoStripe } from '@/lib/pasarela'
+import { usandoStripe, destinoSeguro } from '@/lib/pasarela'
 
 async function resolver(datos: FormData) {
   'use server'
   const referencia = String(datos.get('referencia'))
-  const token = String(datos.get('token'))
   const exito = String(datos.get('resultado')) === 'exito'
 
   if (exito) await confirmarCobro(referencia)
   else await rechazarCobro(referencia)
 
-  redirect(`/q/${token}`)
+  // A donde dijo quien mandó a pagar: la página del QR si vino de ahí, o la
+  // del folio si vino de ahí. El destino se filtra porque viaja en la liga.
+  const casa = destinoSeguro(String(datos.get('volver') || ''), `/q/${String(datos.get('token'))}`)
+  // Con la misma marca que pone Stripe, para que la pantalla de vuelta se
+  // comporte igual con la pasarela de verdad y con esta.
+  redirect(`${casa}${casa.includes('?') ? '&' : '?'}pago=${exito ? 'listo' : 'cancelado'}`)
 }
 
-export default async function PantallaPago({ params }: { params: Promise<{ pagoId: string }> }) {
+export default async function PantallaPago({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ pagoId: string }>
+  searchParams: Promise<{ volver?: string }>
+}) {
   const { pagoId } = await params
+  const { volver } = await searchParams
 
   const pago = await prisma.pago.findUnique({
     where: { id: pagoId },
@@ -32,6 +43,7 @@ export default async function PantallaPago({ params }: { params: Promise<{ pagoI
 
   const { cargo } = pago
   const token = cargo.inscripcion.tokenQR
+  const deVuelta = destinoSeguro(volver, `/q/${token}`)
 
   return (
     <div className="contenedor angosto" style={{ paddingTop: '2rem' }}>
@@ -58,6 +70,7 @@ export default async function PantallaPago({ params }: { params: Promise<{ pagoI
         <form action={resolver} className="fila">
           <input type="hidden" name="referencia" value={pago.stripePaymentIntentId} />
           <input type="hidden" name="token" value={token} />
+          <input type="hidden" name="volver" value={deVuelta} />
           <button className="boton" type="submit" name="resultado" value="exito" style={{ flex: 1 }}>
             El pago se completó
           </button>
@@ -68,7 +81,7 @@ export default async function PantallaPago({ params }: { params: Promise<{ pagoI
       </div>
 
       <p className="silencio" style={{ textAlign: 'center', fontSize: '.85rem' }}>
-        <a href={`/q/${token}`}>Volver sin pagar</a>
+        <a href={deVuelta}>Volver sin pagar</a>
       </p>
     </div>
   )

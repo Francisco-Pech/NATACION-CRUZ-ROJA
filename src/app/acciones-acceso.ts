@@ -1,6 +1,7 @@
 'use server'
 
 import { redirect } from 'next/navigation'
+import { enlacesDelPanel } from '@/lib/navegacion'
 import { prisma } from '@/lib/db'
 import { verificarPassword } from '@/lib/auth'
 import { crearSesion, cerrarSesion, leerSesion } from '@/lib/sesion'
@@ -19,7 +20,10 @@ export async function entrar(_previo: string | null, datos: FormData): Promise<s
   }
 
   await crearSesion(usuario.id)
-  redirect(usuario.rol === 'PROFESOR' ? '/profesor' : '/panel')
+  // Se relee la sesión para conocer los permisos de su rol: es lo que
+  // decide a qué pantalla llega, no el nombre del rol.
+  const sesion = await leerSesion()
+  redirect(enlacesDelPanel(sesion)[0]?.href ?? '/acceso')
 }
 
 export async function salir() {

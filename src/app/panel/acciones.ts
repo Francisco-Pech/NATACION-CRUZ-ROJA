@@ -2,25 +2,26 @@
 
 import { revalidatePath } from 'next/cache'
 import { prisma } from '@/lib/db'
-import { requiereRol } from '@/lib/sesion'
+import { requierePermiso } from '@/lib/sesion'
 import { inscribirAlumno } from '@/lib/servicios/inscripciones'
 import { generarCargosDelPeriodo, aplicarRecargosVencidos } from '@/lib/servicios/periodos'
-import { asignarLocker, liberarLocker } from '@/lib/servicios/lockers'
 import { registrarPago, validarPago } from '@/lib/servicios/pagos'
 import { periodoActual } from '@/lib/periodo-actual'
-import { Categoria, MetodoPago, EstadoPago } from '@prisma/client'
+import { MetodoPago, EstadoPago } from '@prisma/client'
 
 export async function altaRapida(_previo: string | null, datos: FormData) {
-  await requiereRol('ADMINISTRADOR', 'CAPTURISTA')
+  await requierePermiso('ALUMNOS')
 
   const nombreCompleto = String(datos.get('nombreCompleto') ?? '').trim()
   if (nombreCompleto.length < 3) return 'Escribe el nombre completo'
 
-  const categoria = datos.get('categoria') === 'NINOS' ? Categoria.NINOS : Categoria.GENERAL
   const actual = await periodoActual()
   if (!actual) return 'No hay un ciclo abierto'
 
-  const inscripcion = await inscribirAlumno(nombreCompleto, actual.ciclo.id, categoria)
+  const inscripcion = await inscribirAlumno({
+    nombreCompleto,
+    cicloAnualId: actual.ciclo.id,
+  })
   await generarCargosDelPeriodo(actual.periodo.id)
 
   revalidatePath('/panel/alumnos')
@@ -28,7 +29,7 @@ export async function altaRapida(_previo: string | null, datos: FormData) {
 }
 
 export async function generarCargosDelMes() {
-  await requiereRol('ADMINISTRADOR', 'CAPTURISTA')
+  await requierePermiso('COBRAR')
   const actual = await periodoActual()
   if (!actual) return
 
@@ -39,7 +40,7 @@ export async function generarCargosDelMes() {
 }
 
 export async function cobrar(_previo: string | null, datos: FormData) {
-  const usuario = await requiereRol('ADMINISTRADOR', 'CAPTURISTA')
+  const usuario = await requierePermiso('COBRAR')
 
   const cargoId = String(datos.get('cargoId') ?? '')
   const metodo = String(datos.get('metodo') ?? 'EFECTIVO') as MetodoPago
@@ -62,29 +63,12 @@ export async function cobrar(_previo: string | null, datos: FormData) {
 }
 
 export async function resolverComprobante(datos: FormData) {
-  const usuario = await requiereRol('ADMINISTRADOR', 'CAPTURISTA')
+  const usuario = await requierePermiso('COBRAR')
   const pagoId = String(datos.get('pagoId') ?? '')
   const aprobado = datos.get('accion') === 'aprobar'
 
   await validarPago(pagoId, usuario.id, aprobado)
   revalidatePath('/panel/pagos')
-}
-
-export async function moverLocker(datos: FormData) {
-  await requiereRol('ADMINISTRADOR', 'CAPTURISTA')
-  const periodoId = String(datos.get('periodoId') ?? '')
-  const asignacionId = String(datos.get('asignacionId') ?? '')
-
-  if (asignacionId) {
-    await liberarLocker(asignacionId)
-  } else {
-    const lockerId = String(datos.get('lockerId') ?? '')
-    const inscripcionId = String(datos.get('inscripcionId') ?? '')
-    if (lockerId && inscripcionId) await asignarLocker(lockerId, inscripcionId, periodoId)
-  }
-
-  revalidatePath('/panel/lockers')
-  revalidatePath('/panel/alumnos')
 }
 
 export async function guardarDatosAlumno(token: string, datos: FormData) {

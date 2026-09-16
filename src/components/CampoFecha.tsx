@@ -23,6 +23,8 @@ export default function CampoFecha({
   etiqueta,
   requerido = false,
   deshabilitado = false,
+  alCambiar,
+  prefijo,
 }: {
   nombre: string
   valor?: string
@@ -30,8 +32,24 @@ export default function CampoFecha({
   etiqueta: string
   requerido?: boolean
   deshabilitado?: boolean
+  /**
+   * Una palabra antes de la fecha: "Desde 1 de septiembre".
+   *
+   * Sirve cuando el campo va en una barra de filtros, donde los demás se
+   * leen solos —"Horario: todos"— y una fecha suelta no dice de qué es.
+   */
+  prefijo?: string
+  /** Se avisa al escoger, para filtrar sin un botón aparte. */
+  alCambiar?: (valor: string) => void
 }) {
-  const [elegida, setElegida] = useState(valor ?? '')
+  const [elegida, poner] = useState(valor ?? '')
+
+  /** Guarda y avisa. Las dos cosas siempre juntas: un camino que solo
+   *  guarde deja el filtro mirando una fecha que ya nadie tiene. */
+  const setElegida = (nueva: string) => {
+    poner(nueva)
+    alCambiar?.(nueva)
+  }
   const [abierto, setAbierto] = useState(false)
   const [sitio, setSitio] = useState<{ top: number; left: number } | null>(null)
   const inicial = leer(valor ?? '') ?? new Date()
@@ -116,7 +134,10 @@ export default function CampoFecha({
         aria-haspopup="dialog"
         aria-expanded={abierto}
       >
-        <span className={puesta ? '' : 'silencio'}>{puesta ? enPalabras(puesta) : 'Escoge una fecha'}</span>
+        <span className={puesta ? '' : 'silencio'}>
+          {prefijo && `${prefijo} `}
+          {puesta ? (prefijo ? enCorto(puesta) : enPalabras(puesta)) : 'sin fecha'}
+        </span>
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
           strokeWidth="2" strokeLinecap="round" aria-hidden>
           <rect x="3" y="5" width="18" height="16" rx="2" />
@@ -227,6 +248,16 @@ function leer(texto: string): Date | null {
 
 const enPalabras = (d: Date) =>
   `${d.getDate()} de ${NOMBRES_MES[d.getMonth()]} de ${d.getFullYear()}`
+
+/**
+ * La fecha corta, para cuando el campo ya gastó espacio en su prefijo.
+ *
+ * "Desde 1 de septiembre de 2026" no cabe en un filtro del ancho de los
+ * demás, y truncarlo deja "Desde 1 de septie…", que no dice ni el año. Con
+ * el mes abreviado entra completa, que es lo que importa.
+ */
+const enCorto = (d: Date) =>
+  `${d.getDate()} ${NOMBRES_MES[d.getMonth()].slice(0, 3)} ${d.getFullYear()}`
 
 const esMismoDia = (d: Date | null, anio: number, mes: number, dia: number) =>
   !!d && d.getFullYear() === anio && d.getMonth() === mes && d.getDate() === dia

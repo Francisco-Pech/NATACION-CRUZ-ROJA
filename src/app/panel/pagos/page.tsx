@@ -1,124 +1,130 @@
-import {
-  Stack, Typography, Card, CardContent, Table, TableHead, TableRow, TableCell,
-  TableBody, Button, Alert, Chip,
-} from '@mui/material'
 import { prisma } from '@/lib/db'
-import { periodoActual } from '@/lib/periodo-actual'
-import { pesos, MESES } from '@/lib/formato'
-import { resolverComprobante } from '../acciones'
-import { EstadoPago } from '@prisma/client'
+import { requierePermiso } from '@/lib/sesion'
+import { ETIQUETA_METODO } from '@/lib/metodos-pago'
+import { ETIQUETA_PAGO, colorDePago } from '@/lib/estado-de-pago'
+import { MetodoPago, EstadoPago } from '@prisma/client'
+import { ZONA, anioEnCurso, mesEnCurso } from '@/lib/zona'
+import TablaPagos, { type RenglonPago } from './TablaPagos'
 
+const dos = (n: number) => String(n).padStart(2, '0')
+
+/** "2026-09-15": el día con el que se compara el rango del filtro. */
+const claveDeDia = (anio: number, mes: number, dia: number) => `${anio}-${dos(mes)}-${dos(dia)}`
+
+/** El día y la hora como se leen en Cancún, no como los guarda la base. */
+const EN_CANCUN = new Intl.DateTimeFormat('es-MX', {
+  timeZone: ZONA,
+  day: '2-digit',
+  month: 'short',
+  year: 'numeric',
+  hour: '2-digit',
+  minute: '2-digit',
+})
+
+/** El día de una fecha, en Cancún: "2026-09-15". */
+const DIA_EN_CANCUN = new Intl.DateTimeFormat('en-CA', {
+  timeZone: ZONA,
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
+})
+
+/**
+ * El historial de pagos.
+ *
+ * Solo para verlo: qué entró, de quién, cuándo y con qué. No se cobra ni se
+ * corrige desde aquí —eso vive en la ventana de mensualidades del alumno,
+ * donde se ve qué mes se está tocando—, así que esta pantalla no trae un
+ * solo botón que mueva dinero.
+ *
+ * Todo el mes se cuenta en hora de Cancún. Un cobro de las 9 de la noche del
+ * 30 de septiembre es del 1 de octubre en UTC, y quien cierra el mes en la
+ * ventanilla no encontraría su propio cobro.
+ */
 export default async function Pagos() {
-  const actual = await periodoActual()
-  if (!actual) return <Alert severity="warning">No hay un ciclo abierto.</Alert>
+  await requierePermiso('COBRAR')
 
-  const porValidar = await prisma.pago.findMany({
-    where: { estado: EstadoPago.EN_REVISION },
-    include: { cargo: { include: { inscripcion: { include: { alumno: true } }, periodo: true } } },
+  // El mes que corre, en Cancún: es donde abre el rango. El día 0 del mes
+  // siguiente es el último de este, sin tener que saberse cuántos trae
+  // febrero.
+  const anio = anioEnCurso()
+  const mes = mesEnCurso()
+  const ultimoDia = new Date(anio, mes, 0).getDate()
+
+  // Los filtros se arman del catálogo, no de los pagos que haya: quien
+  // revisa el historial necesita poder preguntar "¿entró algo con tarjeta?"
+  // y que el sistema conteste que no.
+  const [cursos, horarios] = await Promise.all([
+    prisma.tipoCurso.findMany({ where: { activo: true }, orderBy: { nombre: 'asc' } }),
+    prisma.horario.findMany({ orderBy: { horaInicio: 'asc' } }),
+  ])
+
+  const catalogos = {
+    cursos: cursos.map((c) => c.nombre),
+    horarios: horarios.map((h) => `${h.horaInicio}–${h.horaFin}`),
+    metodos: Object.values(MetodoPago).map((m) => ETIQUETA_METODO[m] ?? m),
+    estados: Object.values(EstadoPago).map((e) => ETIQUETA_PAGO[e]),
+  }
+
+  const pagos = await prisma.pago.findMany({
+    include: {
+      registradoPor: { select: { nombre: true } },
+      cargo: {
+        include: {
+          tipoCurso: { select: { nombre: true } },
+          inscripcion: {
+            include: {
+              alumno: { select: { nombreCompleto: true } },
+              sesiones: { include: { sesion: { include: { horario: true } } } },
+            },
+          },
+        },
+      },
+    },
     orderBy: { fechaPago: 'desc' },
   })
 
-  const recientes = await prisma.pago.findMany({
-    where: { cargo: { periodoId: actual.periodo.id }, estado: EstadoPago.CONFIRMADO },
-    include: {
-      cargo: { include: { inscripcion: { include: { alumno: true } } } },
-      registradoPor: { select: { nombre: true } },
-    },
-    orderBy: { fechaPago: 'desc' },
-    take: 50,
+  const renglones: RenglonPago[] = pagos.map((p) => {
+    // La franja, sin los días: van implícitos en el curso, y repetir la hora
+    // una vez por día llenaría la columna de ruido.
+    const horas = [
+      ...new Set(
+        p.cargo.inscripcion.sesiones
+          .filter((s) => s.sesion.tipoCursoId === p.cargo.tipoCursoId)
+          .map((s) => `${s.sesion.horario.horaInicio}–${s.sesion.horario.horaFin}`),
+      ),
+    ]
+
+    return {
+      id: p.id,
+      fecha: EN_CANCUN.format(p.fechaPago),
+      dia: DIA_EN_CANCUN.format(p.fechaPago),
+      alumno: p.cargo.inscripcion.alumno.nombreCompleto,
+      folio: p.cargo.inscripcion.folio,
+      curso: p.cargo.tipoCurso.nombre,
+      horario: horas.length === 0 ? '—' : horas.join(', '),
+      metodo: ETIQUETA_METODO[p.metodo] ?? p.metodo,
+      estado: ETIQUETA_PAGO[p.estado],
+      color: colorDePago(p.estado),
+      monto: p.montoCobrado,
+      quien: p.registradoPor?.nombre ?? null,
+    }
   })
 
   return (
-    <Stack spacing={3}>
-      <h1>Pagos · {MESES[actual.periodo.mes - 1]} {actual.ciclo.anio}</h1>
+    <>
+      <h1>Pagos</h1>
+      <p className="silencio" style={{ marginTop: '-.4rem' }}>
+        El historial de lo que ha entrado. Abre en el mes que corre; para cobrar o corregir,
+        entra al alumno.
+      </p>
 
-      <Card>
-        <CardContent>
-          <h2>
-            Comprobantes por validar
-            {porValidar.length > 0 && <Chip size="small" color="info" label={porValidar.length} sx={{ ml: 1 }} />}
-          </h2>
-          {porValidar.length === 0 ? (
-            <Typography color="text.secondary">No hay comprobantes esperando revisión.</Typography>
-          ) : (
-            <div className="tabla-ancha">
-              <Table size="small">
-                <TableHead>
-                  <TableRow>
-                    <TableCell>Alumno</TableCell>
-                    <TableCell>Mes</TableCell>
-                    <TableCell>Método</TableCell>
-                    <TableCell align="right">Monto</TableCell>
-                    <TableCell>Referencia</TableCell>
-                    <TableCell align="right">Acción</TableCell>
-                  </TableRow>
-                </TableHead>
-                <TableBody>
-                  {porValidar.map((p) => (
-                    <TableRow key={p.id}>
-                      <TableCell>{p.cargo.inscripcion.alumno.nombreCompleto}</TableCell>
-                      <TableCell>{MESES[p.cargo.periodo.mes - 1]}</TableCell>
-                      <TableCell>{p.metodo}</TableCell>
-                      <TableCell align="right">{pesos(p.montoCobrado)}</TableCell>
-                      <TableCell>{p.referencia ?? '—'}</TableCell>
-                      <TableCell align="right">
-                        <form action={resolverComprobante} style={{ display: 'inline-flex', gap: 8 }}>
-                          <input type="hidden" name="pagoId" value={p.id} />
-                          <Button type="submit" name="accion" value="aprobar" size="small" variant="contained" color="success">
-                            Aprobar
-                          </Button>
-                          <Button type="submit" name="accion" value="rechazar" size="small" variant="outlined" color="error">
-                            Rechazar
-                          </Button>
-                        </form>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
-          )}
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardContent>
-          <h2>Pagos del mes</h2>
-        </CardContent>
-        <div className="tabla-ancha">
-          <Table size="small">
-            <TableHead>
-              <TableRow>
-                <TableCell>Fecha</TableCell>
-                <TableCell>Alumno</TableCell>
-                <TableCell>Método</TableCell>
-                <TableCell align="right">Cobrado</TableCell>
-                <TableCell align="right">Comisión</TableCell>
-                <TableCell align="right">Neto</TableCell>
-                <TableCell>Registró</TableCell>
-              </TableRow>
-            </TableHead>
-            <TableBody>
-              {recientes.map((p) => (
-                <TableRow key={p.id} hover>
-                  <TableCell>{p.fechaPago.toLocaleDateString('es-MX')}</TableCell>
-                  <TableCell>{p.cargo.inscripcion.alumno.nombreCompleto}</TableCell>
-                  <TableCell>{p.metodo}</TableCell>
-                  <TableCell align="right">{pesos(p.montoCobrado)}</TableCell>
-                  <TableCell align="right">{p.montoComision ? pesos(p.montoComision) : '—'}</TableCell>
-                  <TableCell align="right" sx={{ fontWeight: 600 }}>{pesos(p.montoNeto)}</TableCell>
-                  <TableCell>{p.registradoPor?.nombre ?? '—'}</TableCell>
-                </TableRow>
-              ))}
-              {recientes.length === 0 && (
-                <TableRow><TableCell colSpan={7}>
-                  <Typography color="text.secondary">Aún no hay pagos este mes.</Typography>
-                </TableCell></TableRow>
-              )}
-            </TableBody>
-          </Table>
-        </div>
-      </Card>
-    </Stack>
+      <TablaPagos
+        renglones={renglones}
+        catalogos={catalogos}
+        desdeHoy={claveDeDia(anio, mes, 1)}
+        hastaHoy={claveDeDia(anio, mes, ultimoDia)}
+      />
+    </>
   )
 }

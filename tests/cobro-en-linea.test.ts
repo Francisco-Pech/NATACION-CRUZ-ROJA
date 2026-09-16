@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterAll } from 'vitest'
+import { describe, it, expect, beforeEach, afterAll, vi } from 'vitest'
 import { prisma } from '@/lib/db'
 import { iniciarCobro, confirmarCobro, rechazarCobro } from '@/lib/servicios/cobro-en-linea'
 import { Categoria, EstadoCargo, EstadoPago, MetodoPago } from '@prisma/client'
@@ -21,6 +21,11 @@ async function limpiar() {
 }
 
 beforeEach(async () => {
+  // Sin llaves de Stripe: estas pruebas son del servicio, no de la pasarela.
+  // El .env del proyecto sí las trae, y sin apagarlas cada corrida crearía
+  // intentos de pago de verdad en la cuenta de la delegación.
+  vi.stubEnv('STRIPE_SECRET_KEY', '')
+
   await limpiar()
   const ciclo = await prisma.cicloAnual.create({ data: { anio: ANIO } })
   const periodo = await prisma.periodo.create({
@@ -73,9 +78,9 @@ describe('iniciarCobro', () => {
     expect(cargo.estado).not.toBe(EstadoCargo.PAGADO)
   })
 
-  it('devuelve a dónde mandar al alumno', async () => {
-    const { urlPago } = await iniciarCobro(token, MetodoPago.TARJETA, 'http://x', EN_MARZO)
-    expect(urlPago).toBeTruthy()
+  it('devuelve con qué sigue el alumno para terminar de pagar', async () => {
+    const { siguiente } = await iniciarCobro(token, MetodoPago.TARJETA, 'http://x', EN_MARZO)
+    expect(siguiente.tipo).toBeTruthy()
   })
 
   it('se niega a cobrar de nuevo un cargo ya pagado', async () => {

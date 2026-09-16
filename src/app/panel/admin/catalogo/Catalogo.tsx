@@ -151,7 +151,11 @@ export default function Catalogo({
               <tr>
                 <th style={{ width: 46 }}>#</th>
                 {enTabla.map((c) => (
-                  <th key={c.nombre} style={c.ancho ? { width: c.ancho } : undefined}>
+                  <th
+                    key={c.nombre}
+                    className={c.tipo === 'casilla' ? 'celda-casilla' : undefined}
+                    style={c.ancho ? { width: c.ancho } : undefined}
+                  >
                     {c.etiqueta}
                   </th>
                 ))}
@@ -363,7 +367,7 @@ function Fila({
       <td className="silencio" style={{ fontVariantNumeric: 'tabular-nums' }}>{indice + 1}</td>
 
       {campos.filter((c) => c.tipo !== 'oculto' && !c.soloAlta).map((c, col) => (
-        <td key={c.nombre}>
+        <td key={c.nombre} className={c.tipo === 'casilla' ? 'celda-casilla' : undefined}>
           {col === 0 && (
             <>
               <form id={fGuardar} action={accionGuardar} />

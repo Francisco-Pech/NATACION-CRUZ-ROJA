@@ -95,6 +95,11 @@ const GRUPOS: Array<{
     detalle: 'El acceso al sistema.',
     secciones: [
       {
+        href: '/panel/admin/roles',
+        titulo: 'Roles',
+        detalle: 'Qué puede hacer cada grupo de personas. Se crean los que hagan falta.',
+      },
+      {
         href: '/panel/admin/usuarios',
         titulo: 'Usuarios',
         detalle: 'Quién tiene acceso al sistema y con qué rol.',

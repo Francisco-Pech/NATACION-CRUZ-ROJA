@@ -204,3 +204,64 @@ export function avisoDeCalendario(
   }
   return null
 }
+
+/** El n-ésimo lunes de un mes. `mes` va de 1 a 12. */
+function lunesNumero(anio: number, mes: number, cual: number): Date {
+  const d = new Date(anio, mes - 1, 1, MEDIODIA)
+  // Cuántos días faltan del día 1 al primer lunes.
+  d.setDate(1 + ((8 - d.getDay()) % 7) + (cual - 1) * 7)
+  return d
+}
+
+/**
+ * Los tres festivos mexicanos que se mueven, para un año cualquiera.
+ *
+ * La ley los fijó en lunes para hacer puente, así que su fecha cambia cada
+ * año: Constitución es el primer lunes de febrero, Juárez el tercero de
+ * marzo y Revolución el tercero de noviembre.
+ *
+ * Se calculan y no se capturan a mano porque de estos tres depende la
+ * fecha límite de pago: un año sin ellos correría el plazo de los cinco
+ * días hábiles, y eso se descubriría cobrando recargos que no tocaban.
+ */
+export function puentesDe(anio: number): Array<{ nombre: string; fecha: Date }> {
+  return [
+    { nombre: 'Día de la Constitución', fecha: lunesNumero(anio, 2, 1) },
+    { nombre: 'Natalicio de Benito Juárez', fecha: lunesNumero(anio, 3, 3) },
+    { nombre: 'Revolución Mexicana', fecha: lunesNumero(anio, 11, 3) },
+  ]
+}
+
+/**
+ * La Semana Santa de un año, del lunes al domingo de Pascua.
+ *
+ * La Pascua no tiene fecha fija: es el primer domingo tras la primera luna
+ * llena de la primavera. Se calcula con el cómputo gregoriano, que es el
+ * mismo que usa el calendario civil, en vez de capturarla año por año.
+ *
+ * No mueve la fecha límite de pago —es periodo vacacional, no día
+ * inhábil—, pero sí cierra la alberca, y sin ella el calendario de esos
+ * años saldría diciendo que hay clase.
+ */
+export function semanaSantaDe(anio: number): { desde: Date; hasta: Date } {
+  // Cómputo de Meeus/Jones/Butcher.
+  const a = anio % 19
+  const b = Math.floor(anio / 100)
+  const c = anio % 100
+  const d = Math.floor(b / 4)
+  const e = b % 4
+  const f = Math.floor((b + 8) / 25)
+  const g = Math.floor((b - f + 1) / 3)
+  const h = (19 * a + b - d - g + 15) % 30
+  const i = Math.floor(c / 4)
+  const k = c % 4
+  const l = (32 + 2 * e + 2 * i - h - k) % 7
+  const m = Math.floor((a + 11 * h + 22 * l) / 451)
+  const mes = Math.floor((h + l - 7 * m + 114) / 31)
+  const dia = ((h + l - 7 * m + 114) % 31) + 1
+
+  const hasta = new Date(anio, mes - 1, dia, MEDIODIA)
+  const desde = new Date(hasta)
+  desde.setDate(desde.getDate() - 6)
+  return { desde, hasta }
+}

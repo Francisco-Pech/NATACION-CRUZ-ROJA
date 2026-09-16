@@ -1,20 +1,20 @@
 import { redirect } from 'next/navigation'
 import { leerSesion } from '@/lib/sesion'
 import { salir } from '../acciones-acceso'
-import { esAdministrativo, esRoot } from '@/lib/roles'
+import { esRoot } from '@/lib/roles'
+import { esAdministrativo } from '@/lib/permisos'
+import { enlacesDelPanel } from '@/lib/navegacion'
 import BarraLateral from './BarraLateral'
-
-const ROL_LEGIBLE: Record<string, string> = {
-  ADMINISTRADOR: 'Administrador',
-  CAPTURISTA: 'Capturista',
-  PROFESOR: 'Profesor',
-}
 
 export default async function LayoutPanel({ children }: { children: React.ReactNode }) {
   const usuario = await leerSesion()
   if (!usuario) redirect('/acceso')
-  // Root nunca se rebota: puede todo lo que puede cualquier otro.
-  if (usuario.rol === 'PROFESOR' && !esRoot(usuario)) redirect('/profesor')
+
+  // Entra quien tenga al menos una sección. Antes se exigía VER_PANEL, que
+  // dejaba fuera al Capturista —que no ve el Tablero pero sí todo lo demás—
+  // y al Profesor, que entra a pasar lista.
+  const enlaces = enlacesDelPanel(usuario)
+  if (enlaces.length === 0) redirect('/acceso')
 
   const esAdmin = esAdministrativo(usuario)
 
@@ -23,9 +23,9 @@ export default async function LayoutPanel({ children }: { children: React.ReactN
       <BarraLateral
         usuario={{
           nombre: usuario.nombre,
-          rol: esRoot(usuario) ? 'Root' : ROL_LEGIBLE[usuario.rol],
+          rol: esRoot(usuario) ? 'Root' : usuario.rol.nombre,
         }}
-        esAdmin={esAdmin}
+        enlaces={enlaces.map(({ href, texto }) => ({ href, texto }))}
         salir={salir}
       />
 

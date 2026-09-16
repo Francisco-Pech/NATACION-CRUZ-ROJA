@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { esCorreoDeRoot, esRoot, esAdministrativo, puedeAsignarRol } from '@/lib/roles'
+import { esCorreoDeRoot, esRoot } from '@/lib/roles'
 
 const ROOT = 'root@ejemplo.test'
 
@@ -42,70 +42,14 @@ describe('esCorreoDeRoot', () => {
 
 describe('esRoot', () => {
   it('es root quien trae el correo configurado', () => {
-    expect(esRoot({ email: ROOT, rol: 'PROFESOR' }, ROOT)).toBe(true)
+    expect(esRoot({ email: ROOT }, ROOT)).toBe(true)
   })
 
   it('no es root quien trae otro correo, aunque sea administrador', () => {
-    expect(esRoot({ email: 'admin@cruzroja.org', rol: 'ADMINISTRADOR' }, ROOT)).toBe(false)
+    expect(esRoot({ email: 'admin@cruzroja.org' }, ROOT)).toBe(false)
   })
 
   it('sin sesión no hay root', () => {
     expect(esRoot(null, ROOT)).toBe(false)
-  })
-})
-
-describe('esAdministrativo', () => {
-  it('el administrador entra', () => {
-    expect(esAdministrativo({ email: 'admin@cruzroja.org', rol: 'ADMINISTRADOR' }, ROOT)).toBe(true)
-  })
-
-  // Esta es la prueba que evita el error caro: root se reconoce por correo,
-  // así que una comparación de igualdad contra ADMINISTRADOR lo dejaría
-  // fuera de su propio panel.
-  it('root entra aunque su rol guardado no sea administrador', () => {
-    expect(esAdministrativo({ email: ROOT, rol: 'PROFESOR' }, ROOT)).toBe(true)
-  })
-
-  it('el capturista no entra', () => {
-    expect(esAdministrativo({ email: 'cap@cruzroja.org', rol: 'CAPTURISTA' }, ROOT)).toBe(false)
-  })
-
-  it('el profesor no entra', () => {
-    expect(esAdministrativo({ email: 'prof@cruzroja.org', rol: 'PROFESOR' }, ROOT)).toBe(false)
-  })
-
-  it('sin sesión no entra', () => {
-    expect(esAdministrativo(null, ROOT)).toBe(false)
-  })
-})
-
-describe('puedeAsignarRol', () => {
-  const root = { email: ROOT, rol: 'ADMINISTRADOR' as const }
-  const admin = { email: 'admin@cruzroja.org', rol: 'ADMINISTRADOR' as const }
-
-  it('root puede crear administradores', () => {
-    expect(puedeAsignarRol(root, 'ADMINISTRADOR', ROOT)).toBe(true)
-  })
-
-  // El administrador crea personal de piso, pero no gente de su mismo nivel:
-  // si pudiera, cualquier administrador se multiplicaría solo.
-  it('el administrador no puede crear otro administrador', () => {
-    expect(puedeAsignarRol(admin, 'ADMINISTRADOR', ROOT)).toBe(false)
-  })
-
-  it('el administrador sí puede crear capturistas', () => {
-    expect(puedeAsignarRol(admin, 'CAPTURISTA', ROOT)).toBe(true)
-  })
-
-  it('el administrador sí puede crear profesores', () => {
-    expect(puedeAsignarRol(admin, 'PROFESOR', ROOT)).toBe(true)
-  })
-
-  it('el capturista no puede crear a nadie', () => {
-    expect(puedeAsignarRol({ email: 'cap@cruzroja.org', rol: 'CAPTURISTA' }, 'PROFESOR', ROOT)).toBe(false)
-  })
-
-  it('sin sesión no se puede crear a nadie', () => {
-    expect(puedeAsignarRol(null, 'PROFESOR', ROOT)).toBe(false)
   })
 })

@@ -739,7 +739,11 @@ p a:hover { color: var(--rojo); text-decoration-color: currentColor; }
    del botón mientras se recoloca. */
 .selector-lista {
   position: fixed;
-  z-index: 60;
+  /* Encima de cualquier ventana: la lista se dibuja pegada al `<body>`, y
+     con un z-index menor que el del telón de un modal quedaba detrás —el
+     selector se abría, pero no se veía. Pasó en el modal del locker, con
+     el de profesores. */
+  z-index: 100;
   max-width: 22rem;
   padding: .4rem;
   border: 1px solid var(--borde);
@@ -1087,3 +1091,1206 @@ label:has(+ .obligatorio)::after {
   white-space: pre-line;
 }
 
+
+/* La casilla y su encabezado, centrados en su columna. Pegada a la
+   izquierda quedaba lejos del título y con un hueco raro al lado. */
+.celda-casilla { text-align: center; }
+
+/* Un campo de contraseña con sus íconos dentro: el ojo para revisarla y,
+   en el primero, la varita para generar una. Discretos, del color del
+   texto apagado, para que no compitan con el botón de guardar. */
+.campo-clave { position: relative; display: flex; align-items: center; }
+.campo-clave input { padding-right: 3.8rem; }
+.campo-clave .icono-en-campo:last-of-type { right: .3rem; }
+.campo-clave .icono-en-campo:first-of-type { right: 2rem; }
+/* Con un solo ícono —la confirmación— se pega a la derecha. */
+.campo-clave .icono-en-campo:only-of-type { right: .3rem; }
+.campo-clave:has(.icono-en-campo:only-of-type) input { padding-right: 2.2rem; }
+
+.icono-en-campo {
+  position: absolute;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.6rem;
+  height: 1.6rem;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--gris);
+  cursor: pointer;
+}
+.icono-en-campo:hover:not(:disabled) { background: var(--gris-claro); color: var(--tinta); }
+.icono-en-campo:focus-visible { outline: 2px solid var(--rojo); outline-offset: 1px; }
+.icono-en-campo:disabled { opacity: .4; cursor: not-allowed; }
+
+/* El nombre del ícono al pasar el mouse. Con `title` tarda un segundo largo
+   en salir y lo dibuja el sistema; aquí sale de inmediato y se ve como el
+   resto de la pantalla. */
+.icono-en-campo[data-globo]::after {
+  content: attr(data-globo);
+  position: absolute;
+  z-index: 70;
+  bottom: calc(100% + .35rem);
+  right: 0;
+  display: none;
+  width: max-content;
+  max-width: 12rem;
+  padding: .3rem .5rem;
+  border: 1px solid var(--borde);
+  border-radius: 6px;
+  background: var(--blanco);
+  box-shadow: 0 6px 18px rgba(15, 23, 42, .14);
+  color: var(--tinta);
+  font-size: .78rem;
+  font-weight: 500;
+  line-height: 1.3;
+}
+.icono-en-campo[data-globo]:hover::after,
+.icono-en-campo[data-globo]:focus-visible::after { display: block; }
+
+/* ---- Ventana aparte --------------------------------------------------
+   Para lo que son dos campos y un botón: metidos en un renglón de tabla
+   desarman la lista entera. */
+.telon-modal {
+  position: fixed;
+  z-index: 80;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+  background: rgba(15, 23, 42, .35);
+}
+.modal {
+  position: relative;
+  width: min(38rem, 100%);
+  max-height: 90vh;
+  overflow-y: auto;
+  padding: 1.3rem;
+  border-radius: var(--radio);
+  background: var(--blanco);
+  box-shadow: 0 20px 50px rgba(15, 23, 42, .25);
+}
+/* Deja sitio para la cruz: el título no se le mete debajo. */
+.modal h2 { margin-top: 0; padding-right: 2rem; }
+.modal-cerrar {
+  position: absolute;
+  top: .8rem;
+  right: .8rem;
+  display: inline-flex;
+  padding: .3rem;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: var(--gris);
+  cursor: pointer;
+  line-height: 0;
+}
+.modal-cerrar:hover { background: var(--gris-claro); color: var(--tinta); }
+
+/* ---------------------------------------------- el alta de un alumno --- */
+
+/* Una casilla con su texto al lado, fuera de la rejilla de campos. */
+.casilla-suelta {
+  display: flex;
+  align-items: center;
+  gap: .5rem;
+  margin: 1rem 0 0;
+  font-weight: 500;
+  cursor: pointer;
+}
+.casilla-suelta input { width: auto; margin: 0; }
+
+/* Los datos fiscales: aparecen solo si factura, sangrados para que se lea
+   que cuelgan de la casilla de arriba. */
+.grupo-factura {
+  margin-top: .6rem;
+  padding: .9rem 1rem;
+  border-left: 3px solid var(--borde);
+  border-radius: 0 var(--radio) var(--radio) 0;
+  background: var(--fondo);
+}
+.grupo-factura > .fila { margin-bottom: .2rem; }
+
+/* Un dato que no se captura porque siempre vale lo mismo. Se enseña con la
+   altura de un campo para que el renglón no se desalinee. */
+.valor-fijo {
+  margin: 0;
+  padding: .55rem 0;
+  font-size: .9rem;
+  line-height: 1.2;
+}
+
+/* ------------------------------------------- subir un archivo --------- */
+
+.archivo-caja,
+.archivo-puesto {
+  display: flex;
+  align-items: center;
+  gap: .7rem;
+  width: 100%;
+  padding: .8rem .9rem;
+  border-radius: var(--radio);
+  text-align: left;
+  font: inherit;
+}
+
+/* Sin archivo: una caja de línea punteada, que se lee como "aquí va algo". */
+.archivo-caja {
+  border: 1.5px dashed var(--borde);
+  background: var(--blanco);
+  color: var(--tinta);
+  cursor: pointer;
+  transition: border-color .15s, background .15s;
+}
+.archivo-caja:hover:not(:disabled),
+.archivo-caja.encima { border-color: var(--rojo); background: #fff5f5; }
+.archivo-caja:disabled { opacity: .55; cursor: not-allowed; }
+
+/* Con archivo: línea sólida, porque ya no falta nada. */
+.archivo-puesto { border: 1px solid var(--borde); background: var(--gris-claro); }
+
+.archivo-icono { flex: 0 0 auto; line-height: 0; color: var(--gris); }
+.archivo-caja:hover:not(:disabled) .archivo-icono,
+.archivo-caja.encima .archivo-icono { color: var(--rojo); }
+
+.archivo-datos {
+  display: flex;
+  flex-direction: column;
+  gap: .1rem;
+  min-width: 0;
+  flex: 1;
+  font-size: .87rem;
+}
+/* Un nombre largo se recorta en vez de romper el renglón. */
+.archivo-datos strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.archivo-datos .silencio { font-size: .78rem; }
+
+.archivo-puesto button {
+  flex: 0 0 auto;
+  display: inline-flex;
+  padding: .35rem;
+  border: 0;
+  border-radius: 999px;
+  background: none;
+  color: var(--gris);
+  cursor: pointer;
+  line-height: 0;
+}
+.archivo-puesto button:hover { background: rgba(0, 0, 0, .08); color: var(--tinta); }
+
+/* ------------------------------------------------- la credencial ------ */
+
+.credencial { max-width: 380px; margin: 0 auto; text-align: center; }
+.credencial-titulo { font-weight: 700; color: var(--rojo); letter-spacing: .03em; }
+.credencial-raya { border: 0; border-top: 1px solid var(--borde); margin: .85rem 0; }
+.credencial-nombre { font-weight: 700; font-size: 1.05rem; }
+.credencial-folio {
+  font-family: ui-monospace, monospace;
+  margin: .3rem 0 .8rem;
+  letter-spacing: .04em;
+}
+.credencial-qr { width: 240px; height: 240px; max-width: 100%; }
+.credencial-curso { margin-top: .7rem; font-size: .85rem; }
+.credencial-pie { font-size: .78rem; margin-top: .6rem; }
+
+/* El folio de la tabla: abre su credencial, así que se ve como enlace pero
+   es un botón — no lleva a otra página, levanta una ventana. */
+.enlace-folio {
+  padding: 0;
+  border: 0;
+  background: none;
+  font-family: ui-monospace, monospace;
+  font-size: .85rem;
+  color: var(--rojo);
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.enlace-folio:hover { color: var(--rojo-oscuro); }
+
+/* La ventana de la credencial: más angosta que las demás, porque lo que
+   enseña es una hoja. */
+.modal-credencial { width: min(30rem, 100%); }
+
+/* Lo de compartir, colgando de la credencial. */
+.compartir { margin-top: 1.1rem; padding-top: .9rem; border-top: 1px solid var(--borde); }
+
+
+/* ------------------------------------- la credencial que ve el alumno -- */
+
+/* Angosta y centrada: es una hoja, no una pantalla de trabajo. */
+.hoja-credencial { max-width: 30rem; text-align: center; }
+.hoja-credencial h1 { margin-bottom: .3rem; }
+.hoja-credencial > p { margin: 0 auto 1.2rem; max-width: 26rem; font-size: .88rem; }
+
+/* Sus datos, en dos columnas que se apilan en el teléfono. */
+.datos-credencial {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
+  gap: .1rem 1rem;
+  margin: 1.2rem 0 0;
+  padding: 1rem 1.2rem;
+  border: 1px solid var(--borde);
+  border-radius: var(--radio);
+  background: var(--blanco);
+  text-align: left;
+}
+.datos-credencial > div { padding: .45rem 0; border-bottom: 1px solid var(--borde); }
+/* Sin raya en los últimos de cada columna: queda colgando. */
+.datos-credencial > div:last-child { border-bottom: 0; }
+.datos-credencial dt {
+  font-size: .72rem;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  color: var(--gris);
+}
+.datos-credencial dd { margin: .15rem 0 0; font-size: .92rem; }
+
+/* A qué queda apuntado el alumno, bajo los dos selectores. */
+.resumen-horario {
+  margin: .5rem 0 0;
+  padding: .55rem .8rem;
+  border-radius: var(--radio);
+  background: var(--gris-claro);
+  font-size: .87rem;
+}
+
+/* --------------------------------------------------------- lockers ---- */
+
+/* Como están en la pared: de un vistazo se ve cuántos quedan libres, que
+   es la pregunta que llega al mostrador. */
+.rejilla-lockers {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(6.5rem, 1fr));
+  gap: .5rem;
+  margin-top: .8rem;
+}
+.locker {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: .15rem;
+  padding: .7rem .4rem;
+  border: 1px solid var(--borde);
+  border-radius: var(--radio);
+  background: var(--blanco);
+  cursor: pointer;
+  font: inherit;
+  text-align: center;
+  transition: border-color .15s, transform .1s;
+}
+.locker:hover { border-color: var(--gris); transform: translateY(-1px); }
+.locker-numero { font-size: 1.15rem; font-weight: 700; font-variant-numeric: tabular-nums; }
+/* Un nombre largo se recorta: la tarjeta no se estira por él. */
+.locker-quien {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: .72rem;
+  color: var(--gris);
+}
+
+.locker.libre    { border-style: dashed; }
+.locker.alumno   { background: var(--azul-fondo);  border-color: #bfdbfe; }
+.locker.alumno   .locker-numero { color: var(--azul); }
+.locker.profesor { background: var(--verde-fondo); border-color: #bbf7d0; }
+.locker.profesor .locker-numero { color: var(--verde); }
+.locker.apagado  { background: var(--gris-claro); opacity: .55; }
+
+.modal-locker { width: min(28rem, 100%); }
+
+/* Una raya con un "o" en medio, entre dos maneras de hacer lo mismo. */
+.raya-o {
+  position: relative;
+  border: 0;
+  border-top: 1px solid var(--borde);
+  margin: 1.1rem 0;
+}
+.raya-o::after {
+  content: attr(data-texto);
+  position: absolute;
+  top: -.62rem;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 0 .6rem;
+  background: var(--blanco);
+  color: var(--gris);
+  font-size: .78rem;
+  white-space: nowrap;
+}
+
+/* ------------------------------------ preguntar antes de lo que no se
+   puede deshacer. Va encima de cualquier otra ventana: se levanta desde
+   adentro de una. */
+.telon-confirmar { z-index: 90; background: rgba(15, 23, 42, .5); }
+.confirmar {
+  width: min(24rem, 100%);
+  padding: 1.6rem 1.5rem 1.3rem;
+  border-radius: var(--radio);
+  background: var(--blanco);
+  box-shadow: 0 24px 60px rgba(15, 23, 42, .3);
+  text-align: center;
+}
+.confirmar-icono {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 3.6rem;
+  height: 3.6rem;
+  margin-bottom: .8rem;
+  border-radius: 999px;
+  background: #fef2f2;
+  color: var(--rojo);
+}
+.confirmar h3 { margin: 0 0 .4rem; font-size: 1.08rem; }
+.confirmar p { margin: 0; font-size: .87rem; line-height: 1.45; }
+.confirmar-botones {
+  display: flex;
+  justify-content: center;
+  gap: .5rem;
+  margin-top: 1.3rem;
+}
+
+/* ------------------------------------------------ el mes en curso ----- */
+
+/* Una insignia que abre algo: se ve igual, pero se puede picar. */
+.insignia-boton { padding: 0; border: 0; background: none; cursor: pointer; }
+.insignia-boton .insignia { cursor: pointer; }
+.insignia-boton:hover .insignia { filter: brightness(.95); }
+
+.modal-mes { width: min(38rem, 100%); }
+
+.bloque-cargo {
+  margin-top: 1rem;
+  padding: .9rem 1rem;
+  border: 1px solid var(--borde);
+  border-radius: var(--radio);
+}
+
+/* El desglose del cargo: concepto a la izquierda, dinero a la derecha. */
+.desglose { margin: .7rem 0; font-size: .87rem; }
+.desglose > div { display: flex; justify-content: space-between; padding: .18rem 0; }
+.desglose dt { color: var(--gris); }
+.desglose dd { margin: 0; font-variant-numeric: tabular-nums; }
+.desglose .total {
+  margin-top: .3rem;
+  padding-top: .4rem;
+  border-top: 1px solid var(--borde);
+  /* Sin esto hereda el 1.65rem de `.total`, que está pensado para el monto
+     del estado de cuenta y aquí sale del tamaño de un titular. */
+  font-size: inherit;
+  font-weight: 600;
+}
+.desglose .total dt { color: var(--tinta); }
+.desglose .falta dd { color: var(--rojo); font-weight: 600; }
+
+.renglon-pago {
+  display: flex;
+  align-items: center;
+  gap: .6rem;
+  flex-wrap: wrap;
+  padding: .55rem 0;
+  border-top: 1px solid var(--borde);
+  font-size: .87rem;
+}
+/* Lo que entró por la pasarela: se lee, no se toca. */
+.candado { font-size: .78rem; font-style: italic; }
+
+.formulario-pago {
+  margin-top: .6rem;
+  padding: .8rem;
+  border-radius: var(--radio);
+  background: var(--fondo);
+}
+
+/* Cada mes del alumno, plegable. Doce abiertos a la vez no se leen. */
+.mes {
+  margin-top: .5rem;
+  border: 1px solid var(--borde);
+  border-radius: var(--radio);
+  overflow: hidden;
+}
+.mes-de-hoy { border-color: var(--rojo); }
+
+.mes-encabezado {
+  display: flex;
+  align-items: center;
+  gap: .6rem;
+  width: 100%;
+  padding: .65rem .85rem;
+  border: 0;
+  background: var(--blanco);
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+}
+.mes-encabezado:hover { background: var(--fondo); }
+.mes-nombre { flex: 1; display: flex; align-items: center; gap: .5rem; font-weight: 600; }
+.mes-marca {
+  padding: .1rem .4rem;
+  border-radius: 999px;
+  background: var(--rojo);
+  color: #fff;
+  font-size: .68rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: .03em;
+}
+.mes-falta { color: var(--rojo); font-weight: 600; font-size: .87rem; }
+.mes-flecha { line-height: 0; color: var(--gris); transition: transform .15s; }
+.mes-flecha.abierta { transform: rotate(180deg); }
+
+.mes-cuerpo { padding: .2rem .85rem .85rem; border-top: 1px solid var(--borde); }
+/* Dentro de un mes el cargo ya no necesita su propio marco. */
+.mes-cuerpo .bloque-cargo { border: 0; padding: .5rem 0 0; }
+
+/* ---------------------------------------------- el descuento del alumno */
+
+/* Arriba de los meses: quien atiende tiene que poder decir "sí, trae
+   INAPAM" sin abrir mes por mes. */
+.tarjeta-descuento {
+  display: flex;
+  align-items: center;
+  gap: .6rem;
+  flex-wrap: wrap;
+  margin: .9rem 0 .2rem;
+  padding: .6rem .8rem;
+  border: 1px solid var(--verde-fondo);
+  border-radius: var(--radio);
+  background: color-mix(in srgb, var(--verde-fondo) 45%, #fff);
+  font-size: .85rem;
+}
+
+/* En el desglose, el descuento se lee en verde: es lo único que baja. */
+.desglose .renglon-descuento dd { color: var(--verde); }
+
+/* ------------------------------------------------- pagar por adelantado */
+
+.adelantar {
+  padding: .7rem .8rem;
+  border-radius: var(--radio);
+  background: var(--fondo);
+}
+
+/* ------------------------------------------- anotar o corregir un pago */
+
+/* Una hoja aparte, no tres campos sueltos pegados al cargo: mientras se
+   captura un pago no se está haciendo otra cosa, y se nota. */
+.hoja-pago {
+  margin-top: .7rem;
+  border: 1px solid var(--borde);
+  border-radius: var(--radio);
+  background: var(--blanco);
+  overflow: hidden;
+}
+
+.hoja-pago-encabezado {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: .5rem;
+  padding: .5rem .8rem;
+  border-bottom: 1px solid var(--borde);
+  background: var(--fondo);
+  font-size: .78rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  color: var(--gris);
+}
+.hoja-pago-cerrar {
+  display: grid;
+  place-items: center;
+  padding: .2rem;
+  border: 0;
+  border-radius: 999px;
+  background: none;
+  color: var(--gris);
+  cursor: pointer;
+}
+.hoja-pago-cerrar:hover:not(:disabled) { background: var(--borde); color: var(--tinta); }
+
+.hoja-pago-cuerpo { padding: .85rem; }
+
+.hoja-pago-pie {
+  display: flex;
+  justify-content: flex-end;
+  gap: .5rem;
+  padding: .7rem .85rem;
+  border-top: 1px solid var(--borde);
+  background: var(--fondo);
+}
+
+/* La cantidad se lee, no se teclea: es la que el alumno tiene que entregar,
+   ni un peso más ni uno menos. Teclear un número que el sistema ya sabe solo
+   abre la puerta a dejar un cargo saldado con un peso. */
+.monto-fijo {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+  margin-bottom: .9rem;
+  padding: .6rem .8rem;
+  border-radius: var(--radio);
+  background: var(--fondo);
+  font-size: .82rem;
+}
+.monto-fijo strong { font-size: 1.35rem; font-variant-numeric: tabular-nums; }
+
+.hoja-pago .campo label {
+  display: block;
+  margin-bottom: .3rem;
+  font-size: .78rem;
+  font-weight: 600;
+  color: var(--gris);
+}
+.hoja-pago .campo input { margin: 0; }
+
+/* ------------------------------------------- el comprobante de un pago */
+
+/* Lo que subió el alumno desde su página, a la vista del mostrador. Ocupa su
+   propio renglón y no un chip perdido: de él depende poder marcar pagado. */
+.comprobante {
+  display: flex;
+  align-items: center;
+  gap: .7rem;
+  width: 100%;
+  margin: .7rem 0;
+  padding: .5rem .7rem;
+  border: 1px solid var(--borde);
+  border-radius: var(--radio);
+  background: var(--blanco);
+  color: inherit;
+  text-decoration: none;
+}
+.comprobante:hover { border-color: var(--rojo); }
+.comprobante:hover .comprobante-ver { color: var(--rojo); }
+
+/* Sin archivo: el mismo cuerpo, en gris y sin invitar a picarlo. */
+.comprobante.vacio { background: var(--fondo); border-style: dashed; }
+
+.comprobante img,
+.comprobante-pdf,
+.comprobante-hueco {
+  flex: 0 0 auto;
+  width: 2.8rem;
+  height: 2.8rem;
+  border-radius: calc(var(--radio) - 2px);
+  background: var(--fondo);
+}
+.comprobante img { object-fit: cover; }
+.comprobante-pdf,
+.comprobante-hueco {
+  display: grid;
+  place-items: center;
+  color: var(--gris);
+}
+.comprobante-pdf { font-size: .62rem; font-weight: 700; letter-spacing: .04em; }
+.comprobante.vacio .comprobante-hueco { background: transparent; }
+
+.comprobante-texto {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: .1rem;
+  line-height: 1.35;
+}
+.comprobante-texto strong { font-size: .85rem; }
+.comprobante-texto .silencio { font-size: .76rem; }
+
+.comprobante-ver { flex: 0 0 auto; color: var(--gris); }
+
+/* ------------------------------------------- la factura de un alumno */
+
+/* La constancia en su propio bloque: es el papel que se abre para cotejar
+   el RFC antes de timbrar, y el que se guarda en la carpeta del mes. Un
+   enlace suelto en una lista de datos no se ve como algo que se puede
+   bajar. */
+.constancia {
+  display: flex;
+  align-items: center;
+  gap: .8rem;
+  flex-wrap: wrap;
+  padding: .7rem .8rem;
+  border: 1px solid var(--borde);
+  border-radius: var(--radio);
+  background: var(--blanco);
+}
+.constancia.vacia { background: var(--fondo); border-style: dashed; }
+
+.constancia-icono {
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  width: 2.6rem;
+  height: 2.6rem;
+  border-radius: calc(var(--radio) - 2px);
+  background: var(--fondo);
+  color: var(--gris);
+  font-size: .62rem;
+  font-weight: 700;
+  letter-spacing: .04em;
+}
+.constancia.vacia .constancia-icono { background: var(--blanco); }
+
+.constancia-datos {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: .1rem;
+  line-height: 1.35;
+}
+.constancia-datos strong { font-size: .87rem; overflow-wrap: anywhere; }
+.constancia-datos .silencio { font-size: .76rem; }
+
+.constancia-acciones { display: flex; gap: .4rem; flex: 0 0 auto; }
+
+/* Un botón que es solo el dibujo: cuadrado, para que los dos queden del
+   mismo tamaño sin depender del largo de la palabra que ya no está. */
+.solo-icono {
+  display: grid;
+  place-items: center;
+  width: 2.1rem;
+  height: 2.1rem;
+  padding: 0;
+}
+
+/* Cada cobro, con su forma de pago arriba: es lo que pide el CFDI. */
+.cobro {
+  margin-top: .6rem;
+  padding: .7rem .85rem;
+  border: 1px solid var(--borde);
+  border-radius: var(--radio);
+}
+.cobro-encabezado {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+}
+.cobro-total { font-size: 1.05rem; font-weight: 600; }
+.cobro-cuando { margin: .1rem 0 0; font-size: .78rem; }
+.cobro-meses { margin: .5rem 0 0; font-size: .85rem; }
+.cobro .desglose { margin-bottom: 0; }
+
+/* Un mes que todavía no se cobra no se puede timbrar: se atenúa para que no
+   se confunda con uno que sí tiene forma de pago. */
+.tabla-factura .sin-cobrar td { opacity: .75; }
+
+.titulo-seccion {
+  margin: 1.2rem 0 .5rem;
+  font-size: .78rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  color: var(--gris);
+}
+
+/* Etiqueta a la izquierda, dato a la derecha. Igual que el desglose del
+   cargo: es la misma forma de leer en todo el panel. */
+.ficha { margin: 0; font-size: .87rem; }
+.ficha > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: .3rem 0;
+  border-bottom: 1px solid var(--borde);
+}
+.ficha > div:last-child { border-bottom: 0; }
+.ficha dt { flex: 0 0 auto; color: var(--gris); }
+.ficha dd { margin: 0; text-align: right; overflow-wrap: anywhere; }
+
+/* RFC, código postal y montos: alineados y sin que bailen los dígitos. */
+.mono { font-family: ui-monospace, monospace; font-variant-numeric: tabular-nums; }
+
+.tabla-factura { font-size: .85rem; }
+.tabla-factura th {
+  font-size: .72rem;
+  text-transform: uppercase;
+  letter-spacing: .03em;
+  color: var(--gris);
+}
+.tabla-factura td, .tabla-factura th { padding: .4rem .5rem; }
+
+/* Un mes que todavía no se puede cobrar porque falta saldar uno anterior.
+   Se dice en lugar de solo esconder el botón: un hueco en blanco deja a
+   quien atiende preguntándose si la ventana se rompió. */
+.en-espera {
+  margin: .6rem 0 0;
+  padding: .55rem .75rem;
+  border-radius: var(--radio);
+  background: var(--fondo);
+  color: var(--gris);
+  font-size: .85rem;
+}
+.en-espera strong { color: var(--tinta); }
+
+/* La segunda línea de una celda: el folio bajo el nombre, quién marcó el
+   pago bajo la fecha. Sirve para no abrir una columna entera por un dato
+   que solo se mira cuando algo no cuadra. */
+.pie-celda { font-size: .75rem; }
+
+/* ------------------------------------------------------------ gráficas */
+
+/* El color del dato. Azul y no el rojo de la casa a propósito: el rojo ya
+   significa "acción" en los botones y "vencido" en las insignias, y una
+   barra roja al lado de una insignia roja se lee como alarma cuando solo
+   está diciendo cuánto. Validado contra la superficie clara. */
+:root { --dato: #1d4ed8; }
+
+.grafica { margin-top: .4rem; }
+
+.grafica-lienzo { position: relative; width: 100%; }
+.grafica-lienzo svg { width: 100%; height: 100%; display: block; overflow: visible; }
+
+/* Las guías son hilo, no reja: si compiten con el dato, dejan de ayudar. */
+.grafica-guia {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: var(--borde);
+}
+
+/* Las columnas se dibujan con elementos, no con SVG estirado: así el grosor
+   se topa en píxeles de verdad y las esquinas no salen ovaladas. */
+.grafica-lienzo.columnas { display: flex; align-items: flex-end; }
+.columna-carril {
+  position: relative;
+  flex: 1;
+  height: 100%;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  border: 0;
+  padding: 0;
+  background: none;
+  cursor: default;
+}
+.columna-carril:focus-visible { outline: 2px solid var(--dato); outline-offset: -2px; }
+
+/* Se topa en 24px: una barra que llena su carril se vuelve un bloque y deja
+   de leerse como dato. Punta redondeada, base cuadrada — la base es el cero
+   y redondearla la despegaría de la línea. */
+.columna {
+  display: block;
+  width: 100%;
+  max-width: 24px;
+  border-radius: 4px 4px 0 0;
+  background: var(--dato);
+  transition: opacity .12s;
+}
+
+/* Los carriles de captura cubren el lienzo entero: una barra de cuatro
+   píxeles de alto es imposible de apuntar con el ratón. */
+.grafica-carriles { position: absolute; inset: 0; display: flex; }
+.grafica-carril {
+  position: relative;
+  flex: 1;
+  border: 0;
+  padding: 0;
+  background: none;
+  cursor: default;
+}
+.grafica-carril:focus-visible { outline: 2px solid var(--dato); outline-offset: -2px; }
+
+/* El globo va DENTRO del lienzo, no encima de la barra: con una columna que
+   llega al tope, "encima" queda fuera de la tarjeta y el globo sale tapado.
+   Adentro se lee siempre, sin importar qué tan alta esté la barra. */
+.grafica-globo {
+  position: absolute;
+  left: 50%;
+  top: 4px;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  gap: .05rem;
+  padding: .35rem .6rem;
+  border-radius: var(--radio);
+  background: var(--tinta);
+  color: #fff;
+  font-size: .78rem;
+  line-height: 1.3;
+  white-space: nowrap;
+  pointer-events: none;
+  z-index: 5;
+}
+.grafica-globo .silencio { color: #cbd5e1; font-size: .72rem; }
+
+/* El punto va fuera del SVG: adentro se deformaría en óvalo, porque el
+   lienzo se estira sin conservar la proporción. El aro del color de la
+   superficie lo mantiene legible donde cruza la línea. */
+.grafica-punto {
+  position: absolute;
+  width: 9px;
+  height: 9px;
+  margin: -4.5px 0 0 -4.5px;
+  border-radius: 50%;
+  background: var(--dato);
+  box-shadow: 0 0 0 2px var(--blanco);
+  pointer-events: none;
+}
+.grafica-punto.final { width: 11px; height: 11px; margin: -5.5px 0 0 -5.5px; }
+
+.grafica-eje {
+  display: flex;
+  margin-top: .4rem;
+  font-size: .72rem;
+  color: var(--gris);
+}
+.grafica-eje > span { flex: 1; text-align: center; }
+
+/* ---- barras acostadas ---- */
+
+/* Se llaman `grupo-*` y no `barra-*` a propósito: `.barra` ya es la franja
+   roja del encabezado desde el principio del archivo, y reusar el nombre
+   pintaba cada renglón de rojo con el texto en blanco. */
+.grupos { display: flex; flex-direction: column; gap: .55rem; margin-top: .6rem; }
+.grupo { display: grid; grid-template-columns: minmax(8rem, 14rem) 1fr auto; gap: .7rem; align-items: center; }
+.grupo-nombre { font-size: .85rem; overflow-wrap: anywhere; }
+.grupo-canal { height: 12px; border-radius: 6px; background: var(--gris-claro); overflow: hidden; }
+.grupo-relleno { display: block; height: 100%; border-radius: 6px; background: var(--dato); }
+.grupo-valor { font-size: .85rem; font-weight: 600; min-width: 2.5rem; text-align: right; }
+
+@media (max-width: 640px) {
+  .grupo { grid-template-columns: 1fr auto; }
+  .grupo-canal { grid-column: 1 / -1; }
+}
+
+/* ---- las cifras que encabezan el tablero ---- */
+
+.cifras {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
+  gap: .8rem;
+  margin-bottom: 1rem;
+}
+.cifra {
+  padding: .85rem 1rem;
+  border: 1px solid var(--borde);
+  border-radius: var(--radio);
+  background: var(--blanco);
+}
+.cifra-nombre {
+  font-size: .75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  color: var(--gris);
+}
+.cifra-valor { margin-top: .25rem; font-size: 1.6rem; font-weight: 700; font-variant-numeric: tabular-nums; }
+.cifra-pie { font-size: .76rem; color: var(--gris); }
+
+/* Una barra donde todos los filtros miden lo mismo. El buscador se queda a
+   la derecha; los demás se reparten el ancho en partes iguales. */
+.barra-tabla.parejos .filtro-tabla { flex: 1 1 10rem; max-width: 13rem; }
+
+/* El campo de fecha, con la misma caja que un selector: si uno mide 2rem y
+   el otro 2.4rem, la barra se ve rota aunque nada esté mal. */
+.barra-tabla .campo-fecha-boton {
+  height: 2rem;
+  padding: 0 .5rem 0 .6rem;
+  font-size: .85rem;
+  background: var(--blanco);
+  color: var(--gris);
+}
+.barra-tabla .campo-fecha-boton:hover:not(:disabled) { background: var(--gris-claro); }
+
+/* ------------------------------------------- la lista del profesor */
+
+.lista-asistencia th.dia, .lista-asistencia td.dia { width: 46px; text-align: center; padding: .4rem .2rem; }
+.lista-asistencia th.dia { font-size: .68rem; white-space: nowrap; }
+.lista-asistencia td { vertical-align: top; }
+
+/* Un botón que se ve como casilla: la casilla de verdad tendría que
+   enviarse sola con JavaScript, y aquí el formulario ya hace el viaje. */
+.casilla {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  margin: 0 auto;
+  border: 1.5px solid var(--borde);
+  border-radius: 6px;
+  background: var(--blanco);
+  color: transparent;
+  cursor: pointer;
+  padding: 0;
+}
+.casilla:hover:not(:disabled) { border-color: var(--verde); }
+.casilla:focus-visible { outline: 2px solid var(--rojo); outline-offset: 2px; }
+.casilla.puesta { background: var(--verde); border-color: var(--verde); color: #fff; }
+.casilla:disabled { opacity: .5; cursor: wait; }
+
+/* Un mes cerrado se lee y no se toca: sin borde que invite a picarlo. */
+.casilla.cerrada { cursor: default; border-style: dashed; }
+.casilla.cerrada.puesta { border-style: solid; color: #fff; }
+
+/* ---- La lista de un alumno, en su ventana ---------------------------
+   El profesor marca aquí y no en la tabla: apuntarle a un cuadro de
+   catorce píxeles con el dedo, entre veinte columnas, es como se marca
+   el día equivocado. */
+.aviso.grave { background: #fee2e2; color: #b91c1c; }
+
+.dias-del-alumno { display: grid; gap: .25rem; max-height: 46vh; overflow-y: auto; }
+.dias-del-alumno form { margin: 0; width: 100%; }
+/* La casilla de la tabla va centrada en su columna (`margin: 0 auto`).
+   Aquí va pegada a la fecha, o cada renglón la pone en otro sitio. */
+.dia-boton .casilla { margin: 0; flex: 0 0 auto; }
+
+.dia-boton {
+  display: flex;
+  align-items: center;
+  gap: .55rem;
+  width: 100%;
+  padding: .45rem .6rem;
+  border-radius: 8px;
+  font-size: .88rem;
+  text-align: left;
+}
+button.dia-boton {
+  border: 1px solid var(--borde);
+  background: var(--blanco);
+  color: var(--tinta);
+  cursor: pointer;
+}
+button.dia-boton:hover { background: var(--gris-claro); }
+.dia-del-alumno.vino button.dia-boton { border-color: var(--verde, #16a34a); }
+.dia-boton.apagado { color: var(--gris); }
+.dia-boton em { font-style: normal; font-size: .8rem; }
+
+/* ---- Los métodos de pago en línea -----------------------------------
+   Uno por renglón, con lo que cuesta y cuánto tarda en reflejarse
+   debajo. En fila no cabía el segundo dato, y es el que evita que
+   alguien pague dos veces creyendo que la primera falló. */
+.metodos-pago { display: grid; gap: .5rem; margin-top: .7rem; }
+.metodo-pago { display: grid; gap: .15rem; margin: 0; }
+.metodo-pago .boton { width: 100%; }
+.metodo-pago span { font-size: .8rem; }
+
+/* La liga para avisar de un problema. Va como texto, no como folio: el
+   monoespaciado de `.enlace-folio` es para los códigos que se dictan. */
+.enlace-aviso {
+  border: 0;
+  background: none;
+  padding: 0;
+  color: var(--rojo);
+  font: inherit;
+  font-weight: 600;
+  text-decoration: underline;
+  cursor: pointer;
+}
+.enlace-aviso:hover { color: var(--rojo-oscuro); }
+
+/* ---- El mes que toca pagar ------------------------------------------
+   Uno solo y en grande. Con cuatro tarjetas iguales, "¿cuál pago?" se la
+   tenía que contestar la persona — y se paga en orden de todos modos. */
+.mes-a-pagar { border: 2px solid var(--rojo); }
+.mes-a-pagar h2 { margin: .1rem 0 .15rem; }
+.mes-a-pagar .etiqueta { color: var(--rojo); font-weight: 700; }
+.mes-a-pagar-monto { font-size: 2rem; font-weight: 700; margin: .5rem 0 .2rem; }
+.mes-a-pagar.al-dia { border-color: var(--verde); }
+.mes-a-pagar.al-dia .etiqueta { color: var(--verde); }
+
+/* ---- Los meses ya pagados, y los que no se han abierto --------------
+   Se quedan a la vista: enseñan con qué se pagó cada uno y cuándo, que es
+   lo que alguien viene a comprobar cuando duda si su pago entró. */
+.meses-pagados { list-style: none; margin: 0; padding: 0; }
+.meses-pagados li {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: .6rem;
+  align-items: center;
+  padding: .55rem 0;
+  border-top: 1px solid var(--borde);
+}
+.meses-pagados li:first-child { border-top: 0; }
+.meses-pagados .mes-icono { display: flex; color: var(--verde); }
+.meses-pagados li.pendiente .mes-icono { color: var(--gris); }
+.meses-pagados .mes-nombre {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  min-width: 0;
+  font-size: .92rem;
+}
+/* El mes no se parte en dos renglones: es el dato que se busca de un vistazo. */
+.meses-pagados .mes-nombre b { white-space: nowrap; }
+.meses-pagados .mes-nombre .silencio { font-weight: 400; }
+.meses-pagados .monto { font-weight: 700; }
+.meses-pagados li.pendiente .monto { color: var(--gris); font-weight: 600; }
+
+/* ---- La franja de factura, arriba de todo ---------------------------
+   En una línea cuando no hay nada que decidir: quien no factura no tiene
+   por qué leer cinco campos del SAT para pagar su mensualidad. */
+.franja-factura {
+  display: flex;
+  gap: .8rem;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+}
+.franja-factura-texto { flex: 1; min-width: 12rem; }
+.franja-factura-texto p { margin: .35rem 0 0; font-size: .86rem; }
+
+/* El botón de método abre su ventana con el desglose antes de cobrar. */
+.metodo-boton { display: flex; justify-content: space-between; gap: .6rem; width: 100%; }
+.metodo-precio { font-variant-numeric: tabular-nums; }
+
+.desglose-cobro td { padding: .45rem 0; vertical-align: top; }
+.desglose-cobro .desglose-total td { border-top: 1px solid var(--borde); font-size: 1.05rem; }
+.datos-fiscales td { padding: .35rem 0; font-size: .9rem; }
+
+/* Una ventana corta —una pregunta y dos botones— no necesita el ancho de
+   un formulario. */
+.modal.modal-angosto { max-width: 26rem; }
+
+/* ---- La confirmación del alumno -------------------------------------
+   Etiqueta arriba y dato abajo mientras la pantalla es angosta: un nombre
+   completo no cabe en media tarjeta de teléfono, y al apretarse partía
+   hasta el nombre del curso de al lado. Desde 30rem ya caben en fila. */
+.confirma-alumno { margin: 0 0 .6rem; }
+.confirma-alumno > div { padding: .45rem 0; border-top: 1px solid var(--borde); }
+.confirma-alumno > div:first-child { border-top: 0; padding-top: 0; }
+.confirma-alumno dt { font-size: .8rem; color: var(--gris); }
+.confirma-alumno dd { margin: .1rem 0 0; }
+
+@media (min-width: 30rem) {
+  .confirma-alumno > div {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 1rem;
+  }
+  .confirma-alumno dt { font-size: .9rem; }
+  .confirma-alumno dd { margin: 0; text-align: right; }
+}
+
+/* ---- Escoger la forma de pago ---------------------------------------
+   Una lista, no tres botones del ancho de la pantalla: así los tres
+   precios se comparan de un vistazo y el único botón grande es el de
+   pagar. */
+.formas-pago { list-style: none; margin: .7rem 0 .2rem; padding: 0; }
+.formas-pago li + li { border-top: 1px solid var(--borde); }
+.formas-pago label {
+  display: flex;
+  align-items: center;
+  gap: .6rem;
+  padding: .6rem .1rem;
+  cursor: pointer;
+  font-size: .92rem;
+}
+.formas-pago input { width: auto; margin: 0; flex: 0 0 auto; }
+.formas-pago-nombre { flex: 1; min-width: 0; }
+.formas-pago-monto { font-weight: 700; white-space: nowrap; }
+.formas-pago-nota { font-size: .82rem; margin: .1rem 0 .7rem; }
+
+/* La constancia que ya está cargada, con su liga para abrirla. */
+.constancia-actual {
+  display: flex;
+  align-items: center;
+  gap: .6rem;
+  flex-wrap: wrap;
+  margin-bottom: .5rem;
+  font-size: .82rem;
+}
+.constancia-actual span { flex: 1; min-width: 10rem; }
+.constancia-actual .boton { flex: 0 0 auto; text-decoration: none; }
+
+/* La referencia de OXXO: se dicta en la caja y se teclea en la banca, así
+   que va grande, monoespaciada y separada del resto. */
+.referencia-grande {
+  font-size: 1rem;
+  letter-spacing: .06em;
+  text-align: center;
+  background: var(--fondo);
+  border: 1px solid var(--borde);
+  border-radius: 8px;
+  padding: .7rem .5rem;
+  margin: .6rem 0;
+  word-break: break-all;
+}
+
+/* ---- El código del alumno, bajo su folio ----------------------------
+   Debajo del folio porque son las dos formas de nombrar a la misma
+   persona: el que se dicta y el que se escanea. */
+.codigo-del-alumno {
+  display: inline-block;
+  margin: .8rem auto 0;
+  padding: .5rem;
+  border: 1px solid var(--borde);
+  border-radius: 10px;
+  background: var(--blanco);
+}
+.codigo-del-alumno img { display: block; }
+
+/* Los campos que dibuja Stripe, con la misma caja que los nuestros: por
+   dentro son marcos aislados suyos, pero al leerlos nadie tiene por qué
+   notar la diferencia. */
+.campo-stripe {
+  padding: .6rem .7rem;
+  border: 1px solid var(--borde);
+  border-radius: 8px;
+  background: var(--blanco);
+  margin-bottom: .2rem;
+}
+.campo-stripe.StripeElement--focus { border-color: var(--rojo); }
+.campo-stripe.StripeElement--invalid { border-color: #b91c1c; }
+
+/* Quién cobra, dicho con el color de su marca: es el dato que tranquiliza
+   a quien está por teclear su tarjeta. */
+.marca-stripe {
+  display: flex;
+  align-items: center;
+  gap: .45rem;
+  font-size: .8rem;
+  color: var(--gris);
+  margin: .8rem 0 0;
+}
+.marca-stripe strong { color: #635bff; }
+.marca-stripe-sello { display: flex; color: #635bff; flex: 0 0 auto; }
+
+/* El código de barras del recibo de OXXO: lo que pasa el cajero. Sobre
+   blanco y con aire alrededor, o el escáner no lo agarra. */
+.codigo-de-barras {
+  margin: .8rem 0 .2rem;
+  padding: .7rem .5rem;
+  text-align: center;
+  background: #fff;
+  border: 1px solid var(--borde);
+  border-radius: 10px;
+}
+.codigo-de-barras img { display: block; width: 100%; height: auto; max-width: 320px; margin: 0 auto; }
+
+/* Un dato con su botón de copiar: una CLABE son dieciocho dígitos, y
+   teclearlos es como se transfiere al lugar equivocado. */
+.para-copiar {
+  display: inline-flex;
+  align-items: center;
+  gap: .45rem;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+.copiar-boton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  flex: 0 0 auto;
+  border: 1px solid var(--borde);
+  background: var(--blanco);
+  color: var(--gris);
+  border-radius: 6px;
+  padding: 0;
+  cursor: pointer;
+}
+.copiar-boton:hover { color: var(--tinta); background: var(--gris-claro); }
+.copiar-boton.copiado { color: var(--verde); border-color: var(--verde); }
+.referencia-grande .para-copiar { justify-content: center; }

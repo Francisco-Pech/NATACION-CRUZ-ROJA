@@ -34,6 +34,26 @@ export async function POST(peticion: Request) {
   }
 
   switch (evento.type) {
+    // El cobro entró. Con OXXO y con transferencia esto llega horas o días
+    // después de que la persona cerró la pantalla: es el único momento en
+    // que el mes puede darse por pagado.
+    case 'payment_intent.succeeded': {
+      const intento = evento.data.object as Stripe.PaymentIntent
+      await confirmarCobro(intento.id)
+      break
+    }
+
+    // No entró: tarjeta rechazada, recibo de OXXO vencido sin pagar,
+    // transferencia que nunca llegó. El cargo queda como estaba.
+    case 'payment_intent.payment_failed':
+    case 'payment_intent.canceled': {
+      const intento = evento.data.object as Stripe.PaymentIntent
+      await rechazarCobro(intento.id)
+      break
+    }
+
+    // Los cobros hechos con Checkout: quedan de antes, y hay que seguir
+    // atendiéndolos mientras exista alguno sin resolver.
     case 'checkout.session.completed':
     case 'checkout.session.async_payment_succeeded': {
       const sesion = evento.data.object as Stripe.Checkout.Session
@@ -46,6 +66,7 @@ export async function POST(peticion: Request) {
       await rechazarCobro(sesion.id)
       break
     }
+
     default:
       // El resto de eventos no nos interesan.
       break

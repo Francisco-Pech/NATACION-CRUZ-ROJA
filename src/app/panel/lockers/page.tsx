@@ -1,34 +1,59 @@
 import { prisma } from '@/lib/db'
+import { requierePermiso } from '@/lib/sesion'
 import { periodoActual } from '@/lib/periodo-actual'
 import { pesos, nombreMes } from '@/lib/formato'
-import { moverLocker } from '../acciones'
+import TarjetasLockers, { type Casillero } from './TarjetasLockers'
 
 export default async function Lockers() {
+  await requierePermiso('LOCKERS')
+
   const actual = await periodoActual()
   if (!actual) {
     return <><h1>Lockers</h1><div className="aviso">No hay periodo para este mes.</div></>
   }
   const { periodo } = actual
 
-  const lockers = await prisma.locker.findMany({
-    where: { activo: true },
-    orderBy: { numero: 'asc' },
-    include: {
-      asignaciones: {
-        where: { periodoId: periodo.id },
-        include: { inscripcion: { include: { alumno: true } } },
+  const [filas, profesores] = await Promise.all([
+    prisma.locker.findMany({
+      orderBy: { numero: 'asc' },
+      include: {
+        deProfesor: { include: { usuario: true } },
+        asignaciones: {
+          where: { periodoId: periodo.id },
+          include: { inscripcion: { include: { alumno: true } } },
+        },
       },
-    },
+    }),
+    prisma.usuario.findMany({
+      where: { activo: true, rol: { clave: 'PROFESOR' } },
+      orderBy: { nombre: 'asc' },
+      select: { id: true, nombre: true },
+    }),
+  ])
+
+  const lockers: Casillero[] = filas.map((l) => {
+    const delMes = l.asignaciones[0]
+    return {
+      id: l.id,
+      numero: l.numero,
+      activo: l.activo,
+      // El del profesor manda: no cuelga de ningún mes, así que mientras
+      // esté apartado el locker no es de nadie más.
+      ocupa: l.deProfesor
+        ? { quien: 'profesor', nombre: l.deProfesor.usuario.nombre }
+        : delMes
+          ? {
+              quien: 'alumno',
+              nombre: delMes.inscripcion.alumno.nombreCompleto,
+              folio: delMes.inscripcion.folio,
+            }
+          : null,
+    }
   })
 
-  const inscripciones = await prisma.inscripcion.findMany({
-    where: { cicloAnualId: periodo.cicloAnualId, estado: 'ACTIVA' },
-    include: { alumno: true },
-    orderBy: { folio: 'asc' },
-  })
-
-  const ocupados = lockers.filter((l) => l.asignaciones.length > 0)
-  const ingreso = ocupados.length * periodo.precioLocker
+  const deAlumnos = lockers.filter((l) => l.ocupa?.quien === 'alumno').length
+  const deProfesores = lockers.filter((l) => l.ocupa?.quien === 'profesor').length
+  const libres = lockers.filter((l) => l.activo && !l.ocupa).length
 
   return (
     <>
@@ -36,72 +61,26 @@ export default async function Lockers() {
 
       <div className="rejilla">
         <div className="tarjeta dato">
-          <div className="etiqueta">Ocupados</div>
-          <div className="valor">{ocupados.length}</div>
-        </div>
-        <div className="tarjeta dato">
           <div className="etiqueta">Libres</div>
-          <div className="valor">{lockers.length - ocupados.length}</div>
+          <div className="valor">{libres}</div>
         </div>
         <div className="tarjeta dato">
-          <div className="etiqueta">Ingreso del mes</div>
-          <div className="valor monto">{pesos(ingreso)}</div>
+          <div className="etiqueta">De alumnos</div>
+          <div className="valor">{deAlumnos}</div>
+        </div>
+        <div className="tarjeta dato">
+          <div className="etiqueta">De profesores</div>
+          <div className="valor">{deProfesores}</div>
         </div>
       </div>
 
       <div className="tarjeta">
-        <table>
-          <thead>
-            <tr><th style={{ width: 90 }}>Locker</th><th>Asignado a</th><th style={{ width: 320 }}>Acción</th></tr>
-          </thead>
-          <tbody>
-            {lockers.map((locker) => {
-              const asignacion = locker.asignaciones[0]
-              return (
-                <tr key={locker.id}>
-                  <td><strong>#{locker.numero}</strong></td>
-                  <td>
-                    {asignacion ? (
-                      asignacion.inscripcion.alumno.nombreCompleto
-                    ) : (
-                      <span className="silencio">Libre</span>
-                    )}
-                  </td>
-                  <td>
-                    <form action={moverLocker} className="fila" style={{ gap: '.4rem' }}>
-                      <input type="hidden" name="lockerId" value={locker.id} />
-                      <input type="hidden" name="periodoId" value={periodo.id} />
-                      {asignacion ? (
-                        <>
-                          <input type="hidden" name="accion" value="liberar" />
-                          <input type="hidden" name="asignacionId" value={asignacion.id} />
-                          <button className="boton tenue" type="submit" style={{ padding: '.35rem .75rem' }}>
-                            Liberar
-                          </button>
-                        </>
-                      ) : (
-                        <>
-                          <input type="hidden" name="accion" value="asignar" />
-                          <select name="inscripcionId" defaultValue="" style={{ flex: 1 }} aria-label="Alumno">
-                            <option value="" disabled>Elegir alumno…</option>
-                            {inscripciones.map((i) => (
-                              <option key={i.id} value={i.id}>
-                                {i.folio} · {i.alumno.nombreCompleto}
-                              </option>
-                            ))}
-                          </select>
-                          <button className="boton" type="submit" style={{ padding: '.35rem .75rem' }}>
-                            Asignar
-                          </button>
-                        </>
-                      )}
-                    </form>
-                  </td>
-                </tr>
-              )
-            })}
-          </tbody>
-        </table>
+        <TarjetasLockers
+          lockers={lockers}
+          profesores={profesores}
+          periodoId={periodo.id}
+          precio={pesos(periodo.precioLocker)}
+        />
       </div>
     </>
   )

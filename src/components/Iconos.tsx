@@ -140,3 +140,111 @@ export function IconoMenu({ tamano = 18 }: Props) {
     </svg>
   )
 }
+
+/** Varitas: generar una contraseña al azar. */
+export function IconoGenerar({ tamano = 16 }: Props) {
+  return (
+    <svg {...base(tamano)}>
+      <path d="M15 4V2M15 16v-2M8 9h2M20 9h2M17.8 11.8l1.4 1.4M17.8 6.2l1.4-1.4M12.2 6.2l-1.4-1.4" />
+      <path d="M3 21l9-9" />
+      <path d="M12.5 8.5l3 3" />
+    </svg>
+  )
+}
+
+/** Ojo: mostrar u ocultar lo que está escondido. */
+export function IconoVer({ tamano = 16 }: Props) {
+  return (
+    <svg {...base(tamano)}>
+      <path d="M1.5 12S5 5.5 12 5.5 22.5 12 22.5 12 19 18.5 12 18.5 1.5 12 1.5 12z" />
+      <circle cx="12" cy="12" r="3" />
+    </svg>
+  )
+}
+
+/** Ojo tachado: está a la vista, tócalo para esconderlo. */
+export function IconoOcultar({ tamano = 16 }: Props) {
+  return (
+    <svg {...base(tamano)}>
+      <path d="M2 2l20 20" />
+      <path d="M10.6 6.1C11.1 6 11.5 6 12 6c7 0 10.5 6 10.5 6a17 17 0 01-3.3 3.9" />
+      <path d="M6.6 6.7A17 17 0 001.5 12S5 18 12 18c1.3 0 2.4-.2 3.4-.5" />
+      <path d="M9.9 9.9a3 3 0 004.2 4.2" />
+    </svg>
+  )
+}
+
+/** Cruz: cerrar la ventana. */
+export function IconoCerrar({ tamano = 16 }: Props) {
+  return (
+    <svg {...base(tamano)}>
+      <line x1="6" y1="6" x2="18" y2="18" />
+      <line x1="18" y1="6" x2="6" y2="18" />
+    </svg>
+  )
+}
+
+/** Flecha que sale de una caja: abre el archivo en otra pestaña. */
+export function IconoAbrir({ tamano = 16 }: Props) {
+  return (
+    <svg {...base(tamano)}>
+      <path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6" />
+      <path d="M15 3h6v6" />
+      <path d="M10 14L21 3" />
+    </svg>
+  )
+}
+
+/** Flecha hacia una bandeja: guarda el archivo en la máquina. */
+export function IconoBajar({ tamano = 16 }: Props) {
+  return (
+    <svg {...base(tamano)}>
+      <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4" />
+      <path d="M7 10l5 5 5-5" />
+      <path d="M12 15V3" />
+    </svg>
+  )
+}
+
+/** Mes cubierto: la palomita dentro del círculo, como un sello. */
+export function IconoPagado({ tamano = 18 }: Props) {
+  return (
+    <svg width={tamano} height={tamano} viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <circle cx="12" cy="12" r="9" />
+      <polyline points="8.5 12.2 11 14.7 15.8 9.5" />
+    </svg>
+  )
+}
+
+/** Mes que todavía no se abre: el candado, sin dramatismo. */
+export function IconoBloqueado({ tamano = 18 }: Props) {
+  return (
+    <svg width={tamano} height={tamano} viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <rect x="4" y="10.5" width="16" height="10" rx="2" />
+      <path d="M8 10.5V7.5a4 4 0 0 1 8 0v3" />
+    </svg>
+  )
+}
+
+/** Copiar: las dos hojas de siempre, que todo el mundo reconoce. */
+export function IconoCopiar({ tamano = 15 }: Props) {
+  return (
+    <svg width={tamano} height={tamano} viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <rect x="9" y="9" width="11" height="11" rx="2" />
+      <path d="M5 15V5a2 2 0 0 1 2-2h8" />
+    </svg>
+  )
+}
+
+/** Copiado: la palomita que confirma, sin texto que mueva el renglón. */
+export function IconoPalomita({ tamano = 15 }: Props) {
+  return (
+    <svg width={tamano} height={tamano} viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <polyline points="20 6 9 17 4 12" />
+    </svg>
+  )
+}

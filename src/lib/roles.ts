@@ -1,7 +1,4 @@
-import type { Rol } from '@prisma/client'
-
 type ConCorreo = { email: string }
-type ConRol = ConCorreo & { rol: Rol }
 
 const normalizar = (valor: string | null | undefined) => (valor ?? '').trim().toLowerCase()
 
@@ -23,32 +20,8 @@ export function esCorreoDeRoot(
 
 /** Acepta la sesión completa: solo mira el correo, el rol le da igual. */
 export function esRoot(
-  usuario: ConCorreo | ConRol | null | undefined,
+  usuario: ConCorreo | null | undefined,
   rootEmail = process.env.ROOT_EMAIL,
 ): boolean {
   return esCorreoDeRoot(usuario?.email, rootEmail)
-}
-
-/** Quién entra a la configuración: el Administrador y Root. */
-export function esAdministrativo(
-  usuario: ConRol | null | undefined,
-  rootEmail = process.env.ROOT_EMAIL,
-): boolean {
-  if (!usuario) return false
-  return usuario.rol === 'ADMINISTRADOR' || esRoot(usuario, rootEmail)
-}
-
-/**
- * Quién puede dar de alta a quién. El Administrador levanta personal de piso
- * —capturistas y profesores—, pero crear a alguien de su mismo nivel es de
- * Root: si no, cualquier administrador se multiplicaría solo.
- */
-export function puedeAsignarRol(
-  actor: ConRol | null | undefined,
-  rolDestino: Rol,
-  rootEmail = process.env.ROOT_EMAIL,
-): boolean {
-  if (!esAdministrativo(actor, rootEmail)) return false
-  if (rolDestino === 'ADMINISTRADOR') return esRoot(actor, rootEmail)
-  return true
 }

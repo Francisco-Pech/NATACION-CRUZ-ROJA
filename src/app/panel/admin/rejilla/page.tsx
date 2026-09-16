@@ -56,18 +56,8 @@ export default async function DiasYHorarios() {
         etiqueta: `${f.diaSemana.nombre} ${f.horario.horaInicio}–${f.horario.horaFin}`,
       })),
     },
-    // Llegan escritos: casi siempre valen esto y solo se cambian cuando la
-    // franja de verdad acepta otra cosa.
     {
-      nombre: 'cupoMaximo', etiqueta: 'Cupo', tipo: 'numero', ancho: 100,
-      min: 1, max: 999, predeterminado: 35,
-    },
-    {
-      nombre: 'extras', etiqueta: 'Extras', tipo: 'numero', ancho: 100,
-      min: 0, max: 999, opcional: true, predeterminado: 10,
-    },
-    {
-      nombre: 'descripcion', etiqueta: 'Descripción', tipo: 'texto', ancho: 200,
+      nombre: 'descripcion', etiqueta: 'Descripción', tipo: 'texto', ancho: 280,
       opcional: true, placeholder: 'Nota para ustedes',
     },
     { nombre: 'activo', etiqueta: 'Activo', tipo: 'casilla', ancho: 90 },
@@ -121,8 +111,6 @@ export default async function DiasYHorarios() {
     valores: {
       temporada: s.temporada?.hash ?? '',
       franja: s.franja?.hash ?? '',
-      cupoMaximo: s.cupoMaximo,
-      extras: s.extras,
       descripcion: s.descripcion ?? '',
       activo: s.activo,
     },
@@ -143,7 +131,7 @@ export default async function DiasYHorarios() {
 
       <h1>Días y horarios por curso</h1>
       <p className="silencio">
-        Qué curso corre en qué día y horario, y para cuántos. Se arma cruzando{' '}
+        Qué curso corre en qué día y horario. Se arma cruzando{' '}
         <Link href="/panel/admin/temporadas">Fechas por curso</Link> con{' '}
         <Link href="/panel/admin/dias-laborales">Días laborales</Link>: aquí solo se
         puede escoger lo que exista en esas dos pantallas.
@@ -177,13 +165,11 @@ export default async function DiasYHorarios() {
       />
 
       <p className="silencio" style={{ fontSize: '.85rem' }}>
-        El <strong>cupo</strong> es cuántos alumnos acepta esa clase, y se cuenta al
-        inscribir: pasado el tope el sistema ya no deja. Los <strong>extras</strong> son
-        tolerancia sobre el cupo — del cupo a cupo más extras se sigue pudiendo
-        inscribir, pero avisando que va de más. En cero, el cupo es una pared.
-        Un renglón <strong>no se borra, solo se desactiva</strong>: sus inscritos y sus
-        cargos lo siguen nombrando, y sin él nadie podría reconstruir quién iba ese día
-        a esa hora. Desactivado deja de ofrecerse al inscribir.
+        No se limita cuántos alumnos entran: se inscribe a quien llegue, y al dar de
+        alta se ve cuántos van en ese horario. Un renglón{' '}
+        <strong>no se borra, solo se desactiva</strong>: sus inscritos y sus cargos lo
+        siguen nombrando, y sin él nadie podría reconstruir quién iba ese día a esa
+        hora. Desactivado deja de ofrecerse al inscribir.
       </p>
     </>
   )

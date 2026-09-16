@@ -1,82 +1,145 @@
 import { prisma } from '@/lib/db'
-import { cabeUnoMas } from '@/lib/cupos'
-import { formatearFolio, generarTokenQR } from '@/lib/folio'
-import { Categoria } from '@prisma/client'
+import { generarFolio, generarTokenQR } from '@/lib/folio'
 
-export async function siguienteConsecutivo(cicloAnualId: string): Promise<number> {
-  return (await prisma.inscripcion.count({ where: { cicloAnualId } })) + 1
+/** Lo que recepción captura al dar de alta a alguien. */
+export type Alta = {
+  nombreCompleto: string
+  cicloAnualId: string
+  /** A qué días y horarios va. Sin ninguno no se le genera cargo. */
+  sesionIds?: string[]
+  /** El descuento que le toca, si le toca alguno. */
+  descuentoId?: string | null
+  /**
+   * Desde y hasta cuándo se le reconoce ese descuento.
+   *
+   * Las dos en nulo quieren decir "sin límite", que es lo normal en INAPAM.
+   * Una cortesía se pone del día al mismo día y cubre solo ese mes.
+   */
+  descuentoDesde?: Date | null
+  descuentoHasta?: Date | null
+  /** El locker que se lleva, si pidió uno. Se le cobra con su mensualidad. */
+  locker?: { id: string; periodoId: string } | null
+  /** Sus datos de facturación, si pide factura. */
+  factura?: Factura | null
+}
+
+/** Lo que hace falta para facturarle. Se guarda en el alumno, no en la inscripción. */
+export type Factura = {
+  rfc: string
+  razonSocial: string
+  codigoPostal: string
+  regimenFiscal: string
+  usoCfdi: string
+  /** A dónde se le manda el CFDI. Vacío se acepta: no se envía desde aquí. */
+  correo?: string | null
+  constanciaPdf?: Uint8Array<ArrayBuffer> | null
+  constanciaNombre?: string | null
 }
 
 /**
- * Alta mínima: basta el nombre completo. El resto de los datos los llena
- * el propio alumno al abrir su QR, así recepción no se traba capturando.
+ * Da de alta a alguien y lo inscribe en el ciclo.
  *
- * Las sesiones son opcionales, pero sin ellas el alumno no tiene curso y
- * **no se le genera cargo**: la pantalla lo señala.
+ * El año del folio es el del ciclo, y el ciclo es el del curso al que se
+ * apunta: un alumno que entra al curso de 2027 lleva un folio `CR2027…`
+ * aunque se capture en diciembre de 2026.
  *
  * Todo va en una transacción. Si una sesión está llena, no debe quedar un
  * alumno huérfano ni un folio quemado: o entra completo, o no entra.
  */
-export async function inscribirAlumno(
-  nombreCompleto: string,
-  cicloAnualId: string,
-  categoria: Categoria = Categoria.GENERAL,
-  sesionIds: string[] = [],
-) {
-  const ciclo = await prisma.cicloAnual.findUniqueOrThrow({ where: { id: cicloAnualId } })
+export async function inscribirAlumno(alta: Alta) {
+  const ciclo = await prisma.cicloAnual.findUniqueOrThrow({ where: { id: alta.cicloAnualId } })
 
   return prisma.$transaction(async (tx) => {
-    const consecutivo = (await tx.inscripcion.count({ where: { cicloAnualId } })) + 1
-    const alumno = await tx.alumno.create({ data: { nombreCompleto, categoria } })
+    const alumno = await tx.alumno.create({
+      data: {
+        nombreCompleto: alta.nombreCompleto,
+        factura: Boolean(alta.factura),
+        ...(alta.factura
+          ? {
+              rfc: alta.factura.rfc,
+              razonSocial: alta.factura.razonSocial,
+              codigoPostal: alta.factura.codigoPostal,
+              regimenFiscal: alta.factura.regimenFiscal,
+              usoCfdi: alta.factura.usoCfdi,
+              ...(alta.factura.correo ? { email: alta.factura.correo } : {}),
+              constanciaPdf: alta.factura.constanciaPdf ?? null,
+              constanciaNombre: alta.factura.constanciaNombre ?? null,
+              constanciaSubidaEn: alta.factura.constanciaPdf ? new Date() : null,
+            }
+          : {}),
+      },
+    })
 
     const inscripcion = await tx.inscripcion.create({
       data: {
         alumnoId: alumno.id,
-        cicloAnualId,
-        folio: formatearFolio(ciclo.anio, consecutivo),
+        cicloAnualId: alta.cicloAnualId,
+        folio: await folioLibre(tx, ciclo.anio),
         tokenQR: generarTokenQR(),
+        descuentoId: alta.descuentoId ?? null,
+        descuentoDesde: alta.descuentoDesde ?? null,
+        descuentoHasta: alta.descuentoHasta ?? null,
       },
       include: { alumno: true },
     })
 
-    for (const sesionId of [...new Set(sesionIds)]) {
+    for (const sesionId of [...new Set(alta.sesionIds ?? [])]) {
       await apuntarASesion(tx, inscripcion.id, sesionId)
+    }
+
+    // El locker va dentro de la misma transacción: si alguien más lo tomó
+    // entre que se pintó la pantalla y se apretó el botón, la llave única
+    // de (locker, periodo) revienta aquí y no queda ni el alumno a medias
+    // ni un folio quemado. No hay que recalcular ningún cargo: el alumno
+    // acaba de nacer y todavía no tiene ninguno; cuando se generen, el
+    // locker ya estará contado.
+    if (alta.locker) {
+      await tx.asignacionLocker.create({
+        data: {
+          lockerId: alta.locker.id,
+          inscripcionId: inscripcion.id,
+          periodoId: alta.locker.periodoId,
+        },
+      })
     }
 
     return inscripcion
   })
 }
 
+/**
+ * Un folio que nadie tenga.
+ *
+ * Con ocho caracteres al azar de 32 símbolos, dos iguales es cosa de una
+ * en mil millones. Pero "casi nunca" no es "nunca", y chocar sería tirarle
+ * el alta en la cara a quien está capturando: se vuelve a intentar.
+ */
+async function folioLibre(tx: Tx, anio: number, intentos = 5): Promise<string> {
+  for (let i = 0; i < intentos; i++) {
+    const folio = generarFolio(anio)
+    if (!(await tx.inscripcion.findUnique({ where: { folio } }))) return folio
+  }
+  throw new Error('No se pudo generar un folio libre')
+}
+
 type Tx = Parameters<Parameters<typeof prisma.$transaction>[0]>[0]
 
 /**
- * Apunta una inscripción a una sesión respetando el cupo.
+ * Apunta una inscripción a una sesión.
  *
- * El cupo se cuenta aquí, en el servidor, y no solo en la pantalla: la
- * pantalla puede venir de un formulario viejo o de alguien que la saltó.
+ * No hay tope: la alberca acepta a quien llega, y quien captura no tiene
+ * por qué pelear con un número que alguien puso hace meses. Lo que sí se
+ * revisa es que la sesión exista y esté abierta.
  */
 async function apuntarASesion(tx: Tx, inscripcionId: string, sesionId: string) {
-  const sesion = await tx.sesion.findUnique({
-    where: { id: sesionId },
-    include: { horario: true, tipoCurso: true, _count: { select: { inscritos: true } } },
-  })
+  const sesion = await tx.sesion.findUnique({ where: { id: sesionId } })
   if (!sesion) throw new Error('Esa sesión no existe')
   if (!sesion.activo) throw new Error('Esa sesión está cerrada')
-
-  // El cupo es del curso; la sesión solo trae el suyo cuando de verdad es
-  // distinto. Los extras dejan entrar a alguien más allá del tope antes de
-  // mandarlo a la calle.
-  if (cabeUnoMas(sesion._count.inscritos, sesion.cupoMaximo, sesion.extras) === 'lleno') {
-    throw new Error(
-      `Sin cupo en ${sesion.tipoCurso.nombre} de ${sesion.horario.horaInicio}: ` +
-        `${sesion._count.inscritos} de ${sesion.cupoMaximo}`,
-    )
-  }
 
   await tx.inscripcionSesion.create({ data: { inscripcionId, sesionId } })
 }
 
-/** Cambia las sesiones de un alumno ya inscrito, respetando el cupo. */
+/** Cambia los días y horarios de un alumno ya inscrito. */
 export async function cambiarSesiones(inscripcionId: string, sesionIds: string[]) {
   return prisma.$transaction(async (tx) => {
     const deseadas = [...new Set(sesionIds)]
@@ -85,8 +148,6 @@ export async function cambiarSesiones(inscripcionId: string, sesionIds: string[]
     const quitar = actuales.filter((a) => !deseadas.includes(a.sesionId))
     const agregar = deseadas.filter((id) => !actuales.some((a) => a.sesionId === id))
 
-    // Primero se quitan: si alguien se mueve de un horario a otro dentro
-    // del mismo cupo, liberar antes evita un falso "sin cupo".
     if (quitar.length > 0) {
       await tx.inscripcionSesion.deleteMany({ where: { id: { in: quitar.map((q) => q.id) } } })
     }

@@ -15,6 +15,11 @@ const CAMPOS: Campo[] = [
       { valor: 'MIXTO', etiqueta: 'Mixto' },
     ],
   },
+  // Vacío quiere decir sin tope, como estuvo el sistema hasta hoy.
+  {
+    nombre: 'maxMeses', etiqueta: 'Máx. meses', tipo: 'numero', ancho: 120,
+    min: 1, max: 120, opcional: true, predeterminado: 3, placeholder: 'Sin tope',
+  },
   { nombre: 'activo', etiqueta: 'Activo', tipo: 'casilla', ancho: 90 },
 ]
 
@@ -47,6 +52,7 @@ export default async function TiposDeCurso() {
             nombre: c.nombre,
             descripcion: c.descripcion ?? '',
             modoFecha: c.modoFecha,
+            maxMeses: c.maxMeses ?? '',
             activo: c.activo,
           },
         }))}
@@ -60,6 +66,11 @@ export default async function TiposDeCurso() {
         que se abre una sola vez —una competencia, un curso intensivo de verano— y
         <strong> Mixto</strong> para los que se abren varias veces al año. Las fechas en sí
         se capturan en <Link href="/panel/admin/temporadas">Fechas por curso</Link>.
+        <strong> Máx. meses</strong> es cuántos meses se le cobra el curso a un alumno:
+        con 3, después de su tercer mes ya no se le generan cargos de este curso, aunque
+        siga corriendo en el calendario. Se cuenta sobre todo lo que esa persona haya
+        pagado del curso, de cualquier año, y los meses cancelados no gastan. Déjalo en
+        blanco para los cursos que se cobran mientras el alumno siga viniendo.
         <strong> Activo</strong> es si el curso se ofrece hoy: uno
         desactivado deja de aparecer al inscribir, al agendar y al cobrar, pero conserva
         todo su historial. Un curso <strong>nunca se borra</strong>, solo se desactiva —

@@ -1,6 +1,7 @@
 import { prisma } from '@/lib/db'
-import { calcularCargo } from '@/lib/cargos'
-import { tocaCobrar } from '@/lib/cobros'
+import { calcularCargo, leTocaRecargo } from '@/lib/cargos'
+import { descuentoCubreElMes } from '@/lib/descuentos'
+import { tocaCobrar, alcanzoElTope } from '@/lib/cobros'
 import { cursoCorreEnElMes, type ModoFecha } from '@/lib/temporadas'
 import { vigenteEn } from '@/lib/costos'
 import { EstadoCargo, EstadoInscripcion, type ConceptoCosto } from '@prisma/client'
@@ -77,6 +78,15 @@ async function montoVigente(concepto: ConceptoCosto, fecha: Date): Promise<numbe
  */
 export async function generarCargosDelPeriodo(
   periodoId: string,
+  /**
+   * Una sola inscripción, en vez de todas.
+   *
+   * Es lo que deja pagar por adelantado: quien llega en septiembre y quiere
+   * dejar pagado octubre necesita que el cargo de octubre exista hoy, y
+   * correr la cobranza completa de octubre le crearía el cargo también a
+   * todos los demás, semanas antes de que les toque.
+   */
+  soloInscripcionId?: string,
 ): Promise<{ creados: number }> {
   const periodo = await prisma.periodo.findUniqueOrThrow({
     where: { id: periodoId },
@@ -98,8 +108,13 @@ export async function generarCargosDelPeriodo(
   // mes: cobrarle a alguien por un curso que no se está dando sería
   // cobrarle por nada.
   const cursosDelCatalogo = await prisma.tipoCurso.findMany({
-    select: { id: true, modoFecha: true, temporadas: { select: { desde: true, hasta: true } } },
+    select: {
+      id: true, modoFecha: true, maxMeses: true,
+      temporadas: { select: { desde: true, hasta: true } },
+    },
   })
+  /** Cuántos meses dura cada curso. Vacío: sin tope. */
+  const topeDelCurso = new Map(cursosDelCatalogo.map((c) => [c.id, c.maxMeses]))
   const enTemporada = new Set(
     cursosDelCatalogo
       .filter((c) =>
@@ -109,7 +124,11 @@ export async function generarCargosDelPeriodo(
   )
 
   const inscripciones = await prisma.inscripcion.findMany({
-    where: { cicloAnualId: periodo.cicloAnualId, estado: EstadoInscripcion.ACTIVA },
+    where: {
+      cicloAnualId: periodo.cicloAnualId,
+      estado: EstadoInscripcion.ACTIVA,
+      ...(soloInscripcionId ? { id: soloInscripcionId } : {}),
+    },
     include: {
       descuento: true,
       lockers: { where: { periodoId } },
@@ -117,6 +136,23 @@ export async function generarCargosDelPeriodo(
       cargos: { include: { periodo: { select: { mes: true } } } },
     },
   })
+
+  /**
+   * Qué cursos ya se le cobraron a cada alumno, y cuántas veces.
+   *
+   * Por alumno y no por inscripción: el tope de meses es la duración del
+   * curso, así que quien se reinscribe al año siguiente sigue arrastrando
+   * los meses que ya pagó. Se piden aparte porque `inscripcion.cargos`
+   * solo trae los de ese folio.
+   */
+  const historial = await prisma.cargo.findMany({
+    where: { inscripcion: { alumnoId: { in: inscripciones.map((i) => i.alumnoId) } } },
+    select: { tipoCursoId: true, estado: true, inscripcion: { select: { alumnoId: true } } },
+  })
+  const cobradosDe = (alumnoId: string, tipoCursoId: string) =>
+    historial
+      .filter((c) => c.inscripcion.alumnoId === alumnoId && c.tipoCursoId === tipoCursoId)
+      .map((c) => ({ cancelado: c.estado === EstadoCargo.CANCELADO }))
 
   let creados = 0
 
@@ -140,6 +176,13 @@ export async function generarCargosDelPeriodo(
       if (yaEstaEsteCurso) continue
       if (!enTemporada.has(tipoCursoId)) continue
 
+      // El curso dura lo que dura: cumplidos sus meses ya no se le cobra a
+      // esa persona, aunque el curso siga corriendo en el calendario.
+      if (alcanzoElTope(
+        cobradosDe(inscripcion.alumnoId, tipoCursoId),
+        topeDelCurso.get(tipoCursoId) ?? null,
+      )) continue
+
       // Sin tarifa no se inventa un precio: el curso simplemente no se cobra
       // y queda a la vista que le falta configuración.
       const tarifa = tarifaDelCurso(tarifas, tipoCursoId, delMes)
@@ -152,12 +195,23 @@ export async function generarCargosDelPeriodo(
 
       if (!tocaCobrar(periodo.mes, previos, meses)) continue
 
+      // El descuento solo si su vigencia alcanza este mes: una cortesía de
+      // septiembre no debe seguir rebajando la mensualidad de octubre.
+      const leTocaDescuento =
+        !yaHayCargoDelMes &&
+        inscripcion.descuento !== null &&
+        descuentoCubreElMes(
+          { desde: inscripcion.descuentoDesde, hasta: inscripcion.descuentoHasta },
+          periodo.ciclo.anio,
+          periodo.mes,
+        )
+
       const montos = calcularCargo({
         tarifa: tarifa.monto,
         lockers: yaHayCargoDelMes ? 0 : inscripcion.lockers.length,
         precioLocker,
         descuento:
-          !yaHayCargoDelMes && inscripcion.descuento
+          leTocaDescuento && inscripcion.descuento
             ? { tipo: inscripcion.descuento.tipo, valor: inscripcion.descuento.valor }
             : null,
       })
@@ -170,7 +224,9 @@ export async function generarCargosDelPeriodo(
     }
   }
 
-  if (!periodo.cargosGenerados) {
+  // Solo cuando se corrió para todos: un adelanto de una sola persona no
+  // deja el mes por cobrado, o los demás se quedarían sin su cargo.
+  if (!soloInscripcionId && !periodo.cargosGenerados) {
     await prisma.periodo.update({
       where: { id: periodoId },
       data: { cargosGenerados: true },
@@ -212,14 +268,25 @@ export async function aplicarRecargosVencidos(
       estado: EstadoCargo.PENDIENTE,
       recargoAplicadoEn: null,
     },
+    include: { inscripcion: { select: { creadoEn: true } } },
   })
 
   for (const cargo of pendientes) {
+    // Al que se dio de alta dentro de este mismo mes no se le suma: si lo
+    // capturaron el 28, el 5.º día hábil quedó atrás semanas antes de que
+    // su cargo existiera. El cargo sí vence —lo debe— pero sin multa.
+    const toca = leTocaRecargo({
+      altaDeLaInscripcion: cargo.inscripcion.creadoEn,
+      anio: periodo.ciclo.anio,
+      mes: periodo.mes,
+    })
+    const suma = toca ? recargo : 0
+
     await prisma.cargo.update({
       where: { id: cargo.id },
       data: {
-        montoRecargo: cargo.montoRecargo + recargo,
-        montoNeto: cargo.montoNeto + recargo,
+        montoRecargo: cargo.montoRecargo + suma,
+        montoNeto: cargo.montoNeto + suma,
         estado: EstadoCargo.VENCIDO,
         recargoAplicadoEn: ahora,
       },

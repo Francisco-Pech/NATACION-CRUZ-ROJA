@@ -3,13 +3,13 @@
 import { revalidatePath } from 'next/cache'
 import { prisma } from '@/lib/db'
 import { nuevoHash } from '@/lib/ids'
-import { validarEntero, LARGO_DESCRIPCION } from '@/lib/validaciones'
-import { exigirAdministrador, falla, texto, numero, casilla } from '../guardas'
+import { LARGO_DESCRIPCION } from '@/lib/validaciones'
+import { exigirAdministrador, falla, texto, casilla } from '../guardas'
 import type { Resultado } from '../guardas'
 
 /**
- * Un renglón de "Días y horarios por curso": una fecha por curso cruzada con
- * un día laboral, más su cupo.
+ * Un renglón de "Días y horarios por curso": una fecha por curso cruzada
+ * con un día laboral.
  *
  * Aquí no viaja ningún id de la base: lo que entra por el formulario es el
  * hash, y de él se resuelve el registro. Con el id, quien viera el 6 sabría
@@ -42,24 +42,6 @@ export async function guardarSesion(_previo: Resultado, datos: FormData): Promis
       return { ok: false, mensaje: 'La alberca ya no abre en ese día y horario.' }
     }
 
-    // Se pasa también lo que se escribió: así "muchos" se responde con
-    // «"muchos" no es un número» y no con «falta el número», que suena a
-    // que se dejó en blanco y manda a buscar en el lugar equivocado.
-    const cupoMaximo = numero(datos, 'cupoMaximo')
-    const malCupo = validarEntero(cupoMaximo, {
-      min: 1, max: 999, campo: 'El cupo', bruto: texto(datos, 'cupoMaximo'),
-    })
-    if (malCupo) return { ok: false, mensaje: malCupo }
-
-    // Sin tolerancia es una respuesta válida, no un campo en blanco: hay
-    // clases donde no hay dónde meter a uno más.
-    const brutoExtras = texto(datos, 'extras')
-    const extras = brutoExtras === '' ? 0 : numero(datos, 'extras')
-    const malExtras = validarEntero(extras, {
-      min: 0, max: 999, campo: 'Los extras', bruto: brutoExtras,
-    })
-    if (malExtras) return { ok: false, mensaje: malExtras }
-
     if (texto(datos, 'descripcion').length > LARGO_DESCRIPCION.max) {
       return { ok: false, mensaje: `La descripción es muy larga: máximo ${LARGO_DESCRIPCION.max} letras.` }
     }
@@ -73,23 +55,25 @@ export async function guardarSesion(_previo: Resultado, datos: FormData): Promis
       tipoCursoId: temporada.tipoCursoId,
       horarioId: franja.horarioId,
       diaSemana: franja.diaSemana.numero,
-      cupoMaximo,
-      extras,
       // En blanco se guarda como nada, no como cadena vacía: así "sin nota"
       // es un solo valor y no dos que se ven igual.
       descripcion: texto(datos, 'descripcion') || null,
       activo: casilla(datos, 'activo'),
     }
 
+    // El mismo curso, día y hora puede existir en dos temporadas: la de
+    // 2026 y la de 2027 son renglones distintos. Lo que no puede repetirse
+    // es dentro de la misma temporada.
+    const mismoRenglon = {
+      temporadaCursoId: comun.temporadaCursoId,
+      tipoCursoId: comun.tipoCursoId,
+      horarioId: comun.horarioId,
+      diaSemana: comun.diaSemana,
+    }
+
     if (esAlta(datos)) {
-      const repetida = await prisma.sesion.findUnique({
-        where: {
-          tipoCursoId_horarioId_diaSemana: {
-            tipoCursoId: comun.tipoCursoId, horarioId: comun.horarioId, diaSemana: comun.diaSemana,
-          },
-        },
-      })
-      if (repetida) return { ok: false, mensaje: `${nombre} ya está en la lista.` }
+      const repetida = await prisma.sesion.findFirst({ where: mismoRenglon })
+      if (repetida) return { ok: false, mensaje: `${nombre} ya está en esa temporada.` }
 
       await prisma.sesion.create({ data: { ...comun, hash: nuevoHash() } })
       revalidatePath(RUTA)
@@ -99,17 +83,12 @@ export async function guardarSesion(_previo: Resultado, datos: FormData): Promis
     const actual = await prisma.sesion.findUnique({ where: { hash: texto(datos, 'hash') } })
     if (!actual) return { ok: false, mensaje: 'Ese renglón ya no existe.' }
 
-    // Mover un renglón a un día u hora que ya ocupa otro del mismo curso
-    // dejaría dos iguales, y al inscribir no habría manera de saber a cuál.
-    const choca = await prisma.sesion.findUnique({
-      where: {
-        tipoCursoId_horarioId_diaSemana: {
-          tipoCursoId: comun.tipoCursoId, horarioId: comun.horarioId, diaSemana: comun.diaSemana,
-        },
-      },
-    })
+    // Mover un renglón a un día u hora que ya ocupa otro del mismo curso y
+    // la misma temporada dejaría dos iguales, y al inscribir no habría
+    // manera de saber a cuál.
+    const choca = await prisma.sesion.findFirst({ where: mismoRenglon })
     if (choca && choca.id !== actual.id) {
-      return { ok: false, mensaje: `${nombre} ya está en otro renglón.` }
+      return { ok: false, mensaje: `${nombre} ya está en otro renglón de esa temporada.` }
     }
 
     await prisma.sesion.update({ where: { id: actual.id }, data: comun })

@@ -471,6 +471,17 @@ export async function guardarTipoCurso(_previo: Resultado, datos: FormData): Pro
     const problema = validarCatalogo({ nombre, descripcion: texto(datos, 'descripcion') })
     if (problema) return { ok: false, mensaje: problema }
 
+    // Cuántos meses dura el curso. En blanco es sin tope: así estuvo el
+    // sistema hasta que se pidió limitarlo, y así se deja quien no lo use.
+    const brutoTope = texto(datos, 'maxMeses')
+    const maxMeses = brutoTope === '' ? null : numero(datos, 'maxMeses')
+    if (maxMeses !== null) {
+      const malTope = validarEntero(maxMeses, {
+        min: 1, max: 120, campo: 'El máximo de meses', bruto: brutoTope,
+      })
+      if (malTope) return { ok: false, mensaje: malTope }
+    }
+
     if (!esAlta(datos)) {
       if (!(await prisma.tipoCurso.findUnique({ where: { hash } }))) return NO_EXISTE('curso')
       const choque = await cursoQueEstorba(nombre, hash)
@@ -484,6 +495,7 @@ export async function guardarTipoCurso(_previo: Resultado, datos: FormData): Pro
           nombre,
           descripcion: descripcionDe(datos),
           modoFecha: modoDe(datos),
+          maxMeses,
           activo: casilla(datos, 'activo'),
         },
       })
@@ -501,7 +513,7 @@ export async function guardarTipoCurso(_previo: Resultado, datos: FormData): Pro
     await prisma.tipoCurso.create({
       data: {
         hash: nuevoHash(), clave, nombre,
-        descripcion: descripcionDe(datos), modoFecha: modoDe(datos),
+        descripcion: descripcionDe(datos), modoFecha: modoDe(datos), maxMeses,
       },
     })
     recargar()

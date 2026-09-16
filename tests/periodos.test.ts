@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterAll } from 'vitest'
+import { describe, it, expect, beforeAll, beforeEach, afterAll } from 'vitest'
 import { prisma } from '@/lib/db'
 import { nuevoHash } from '@/lib/ids'
 import { generarCargosDelPeriodo, aplicarRecargosVencidos } from '@/lib/servicios/periodos'
@@ -13,14 +13,18 @@ let cicloId = ''
 let periodoId = ''
 
 async function limpiar() {
-  const ciclo = await prisma.cicloAnual.findUnique({ where: { anio: ANIO } })
-  if (!ciclo) return
-  await prisma.costo.deleteMany({
-    where: { vigenciaDesde: { gte: new Date(ANIO, 0, 1), lt: new Date(ANIO + 1, 0, 1) } },
-  })
-  const insc = await prisma.inscripcion.findMany({ where: { cicloAnualId: ciclo.id }, select: { alumnoId: true } })
-  await prisma.cicloAnual.delete({ where: { id: ciclo.id } })
-  await prisma.alumno.deleteMany({ where: { id: { in: insc.map((i) => i.alumnoId) } } })
+  // Dos años, no uno: el tope de meses del curso se cuenta de por vida, y
+  // comprobarlo necesita que el alumno venga inscrito desde el año pasado.
+  for (const anio of [ANIO - 1, ANIO]) {
+    const ciclo = await prisma.cicloAnual.findUnique({ where: { anio } })
+    if (!ciclo) continue
+    await prisma.costo.deleteMany({
+      where: { vigenciaDesde: { gte: new Date(anio, 0, 1), lt: new Date(anio + 1, 0, 1) } },
+    })
+    const insc = await prisma.inscripcion.findMany({ where: { cicloAnualId: ciclo.id }, select: { alumnoId: true } })
+    await prisma.cicloAnual.delete({ where: { id: ciclo.id } })
+    await prisma.alumno.deleteMany({ where: { id: { in: insc.map((i) => i.alumnoId) } } })
+  }
   await prisma.locker.deleteMany({ where: { numero: { gte: 9000 } } })
   await prisma.descuento.deleteMany({ where: { nombre: 'Prueba 50' } })
   // Va al final: sus sesiones no se sueltan hasta que el ciclo se lleva las
@@ -39,11 +43,35 @@ async function limpiar() {
  */
 async function cursoDisponibleTodoElAno(clave: string) {
   const curso = await prisma.tipoCurso.findUniqueOrThrow({ where: { clave } })
-  if (curso.modoFecha === 'RECURRENTE') return curso
+  // Sin tope tampoco: si desde el panel le pusieron un máximo de meses,
+  // estas pruebas dejarían de generar cargos a media corrida.
   return prisma.tipoCurso.update({
     where: { id: curso.id },
-    data: { modoFecha: 'RECURRENTE' },
+    data: { modoFecha: 'RECURRENTE', maxMeses: null },
   })
+}
+
+/**
+ * El tope de meses que traían los cursos del seeder antes de correr.
+ *
+ * Estas pruebas se lo quitan para poder generar cargos mes tras mes, y
+ * estas pruebas comparten base con la aplicación: sin devolverlo, correr la
+ * suite le borraría a la delegación lo que configuró en el panel.
+ */
+const TOPES_ORIGINALES = new Map<string, number | null>()
+const CURSOS_DEL_SEEDER = ['ADULTOS', 'NINOS']
+
+beforeAll(async () => {
+  for (const clave of CURSOS_DEL_SEEDER) {
+    const curso = await prisma.tipoCurso.findUnique({ where: { clave } })
+    if (curso) TOPES_ORIGINALES.set(clave, curso.maxMeses)
+  }
+})
+
+async function devolverLosTopes() {
+  for (const [clave, maxMeses] of TOPES_ORIGINALES) {
+    await prisma.tipoCurso.update({ where: { clave }, data: { maxMeses } })
+  }
 }
 
 const CLAVE_UNICO = 'PRUEBA_PAGO_UNICO'
@@ -63,13 +91,17 @@ async function cursoDePagoUnico() {
     create: { hash: nuevoHash(), clave: CLAVE_UNICO, nombre: 'Curso de prueba, pago único' },
   })
   const horario = await prisma.horario.findFirstOrThrow({ where: { activo: true } })
-  await prisma.sesion.upsert({
-    where: {
-      tipoCursoId_horarioId_diaSemana: { tipoCursoId: curso.id, horarioId: horario.id, diaSemana: 6 },
-    },
-    update: { activo: true },
-    create: { hash: nuevoHash(), tipoCursoId: curso.id, horarioId: horario.id, diaSemana: 6, cupoMaximo: 15 },
-  })
+  // Un renglón de la rejilla es único por temporada. Estas pruebas no usan
+  // ninguna, así que se busca y se actualiza a mano en vez de con `upsert`.
+  const llave = {
+    temporadaCursoId: null, tipoCursoId: curso.id, horarioId: horario.id, diaSemana: 6,
+  }
+  const yaEsta = await prisma.sesion.findFirst({ where: llave })
+  if (yaEsta) {
+    await prisma.sesion.update({ where: { id: yaEsta.id }, data: { activo: true } })
+  } else {
+    await prisma.sesion.create({ data: { ...llave, hash: nuevoHash() } })
+  }
   return curso
 }
 
@@ -136,7 +168,7 @@ beforeEach(async () => {
   })
 })
 
-afterAll(async () => { await limpiar(); await prisma.$disconnect() })
+afterAll(async () => { await limpiar(); await devolverLosTopes(); await prisma.$disconnect() })
 
 describe('generarCargosDelPeriodo', () => {
   it('crea un cargo por cada inscripción activa', async () => {
@@ -341,6 +373,78 @@ describe('generarCargosDelPeriodo', () => {
     const cargo = await prisma.cargo.findFirst({ where: { inscripcionId: i.id } })
     expect(cargo!.montoDescuento).toBe(38500)
     expect(cargo!.montoNeto).toBe(38500)
+  })
+
+  // ------------------------------------------- el máximo de meses del curso
+
+  it('deja de cobrar el curso al llegar a su máximo de meses', async () => {
+    // Un curso que se paga dos meses y ya: al tercero no debe salir cargo,
+    // aunque el curso siga corriendo en el calendario.
+    await prisma.tipoCurso.update({ where: { clave: 'ADULTOS' }, data: { maxMeses: 2 } })
+    const i = await alumnoInscrito('Topado', Categoria.GENERAL, 1)
+
+    const otros = []
+    for (const mes of [4, 5]) {
+      otros.push(await prisma.periodo.create({
+        data: {
+          cicloAnualId: cicloId, mes, clave: `${ANIO}-0${mes}`,
+          fechaLimite: new Date(`${ANIO}-0${mes}-06T23:59:59`),
+        },
+      }))
+    }
+
+    await generarCargosDelPeriodo(periodoId)
+    await generarCargosDelPeriodo(otros[0].id)
+    const tercero = await generarCargosDelPeriodo(otros[1].id)
+
+    expect(tercero.creados).toBe(0)
+    expect(await prisma.cargo.count({ where: { inscripcionId: i.id } })).toBe(2)
+  })
+
+  it('cuenta el tope de por vida, no por año', async () => {
+    await prisma.tipoCurso.update({ where: { clave: 'ADULTOS' }, data: { maxMeses: 1 } })
+    const sesion = await prisma.sesion.findFirstOrThrow({
+      where: { activo: true, tipoCurso: { clave: 'ADULTOS' } },
+    })
+    const alumno = await prisma.alumno.create({ data: { nombreCompleto: 'Repetidor' } })
+
+    // El año pasado ya pagó su único mes.
+    const anterior = await prisma.cicloAnual.create({ data: { anio: ANIO - 1 } })
+    const periodoViejo = await prisma.periodo.create({
+      data: {
+        cicloAnualId: anterior.id, mes: 11, clave: `${ANIO - 1}-11`,
+        fechaLimite: new Date(`${ANIO - 1}-11-06T23:59:59`),
+      },
+    })
+    await prisma.tarifa.create({
+      data: {
+        hash: nuevoHash(), cicloAnualId: anterior.id, tipoCursoId: sesion.tipoCursoId,
+        tipoPagoId: (await prisma.tipoPago.findUniqueOrThrow({ where: { clave: 'RECURRENTE' } })).id,
+        frecuenciaId: (await prisma.frecuenciaPago.findUniqueOrThrow({ where: { clave: 'MENSUAL' } })).id,
+        monto: 77000,
+        vigenciaDesde: new Date(ANIO - 1, 0, 1), vigenciaHasta: new Date(ANIO - 1, 11, 31, 23, 59, 59),
+      },
+    })
+    await prisma.inscripcion.create({
+      data: {
+        alumnoId: alumno.id, cicloAnualId: anterior.id,
+        folio: `CRM-${ANIO - 1}-9001`, tokenQR: `tok-${ANIO - 1}-9001`,
+        sesiones: { create: { sesionId: sesion.id } },
+      },
+    })
+    await generarCargosDelPeriodo(periodoViejo.id)
+
+    // Se reinscribe este año: el curso ya se le cobró completo.
+    const ahora = await prisma.inscripcion.create({
+      data: {
+        alumnoId: alumno.id, cicloAnualId: cicloId,
+        folio: `CRM-${ANIO}-9001`, tokenQR: `tok-${ANIO}-9001`,
+        sesiones: { create: { sesionId: sesion.id } },
+      },
+    })
+    await generarCargosDelPeriodo(periodoId)
+
+    expect(await prisma.cargo.count({ where: { inscripcionId: ahora.id } })).toBe(0)
   })
 })
 

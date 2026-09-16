@@ -3,7 +3,9 @@ import { PrismaClient } from '@prisma/client'
 import { hashPassword } from '../src/lib/auth.ts'
 import { calcularFechaLimite } from '../src/lib/dias-habiles.ts'
 import { nuevoHash } from '../src/lib/ids.ts'
-import { festivosQueCuentan, vacacionesDeFinDeAnio } from '../src/lib/dias-inhabiles.ts'
+import {
+  festivosQueCuentan, vacacionesDeFinDeAnio, puentesDe, semanaSantaDe,
+} from '../src/lib/dias-inhabiles.ts'
 
 /** Una fecha como la escribe el calendario: 2026-12-14. */
 const comoTexto = (d: Date) =>
@@ -14,12 +16,29 @@ const alMediodia = (fecha: string) => new Date(`${fecha}T12:00:00`)
 
 const prisma = new PrismaClient()
 
-const ANIO = 2026
+/**
+ * Los años que se dejan armados.
+ *
+ * Cinco, no dos. Tener los años que entran listos de antemano evita la
+ * carrera de enero: el ciclo, sus periodos, las fechas por curso y la
+ * rejilla ya existen, y lo único que queda por capturar son los precios.
+ *
+ * Es lo básico para arrancar, no la última palabra: el calendario se
+ * corrige desde el panel año con año, que es donde la delegación sabe qué
+ * días de verdad va a cerrar.
+ */
+const ANIOS = [2026, 2027, 2028, 2029, 2030]
+
+/** "2026–2030", para los resúmenes que se imprimen al sembrar. */
+const RANGO_ANIOS = `${ANIOS[0]}–${ANIOS[ANIOS.length - 1]}`
+
+/** El año de referencia para las fechas de plantilla del calendario. */
+const ANIO = ANIOS[0]
 const PRECIO_LOCKER = 10000 // $100.00
 const RECARGO = 5000 // $50.00
 
 /**
- * El calendario de días que no se trabaja, 2026 y 2027.
+ * El calendario de días que no se trabaja, de 2026 a 2030.
  *
  * Todo es un rango: `desde` y `hasta` iguales es un solo día. Solo los de
  * tipo `DIA_INHABIL` corren la fecha límite de pago; vacaciones y
@@ -58,30 +77,32 @@ const CALENDARIO: Inhabil[] = [
   // ---- Los que se mueven: van año por año -----------------------------
   // Constitución, Juárez y Revolución caen en lunes de puente, y ese lunes
   // cambia de fecha cada año. No se pueden repetir a ciegas.
-  movible('Día de la Constitución', '2026-02-02'),
-  movible('Natalicio de Benito Juárez', '2026-03-16'),
-  movible('Revolución Mexicana', '2026-11-16'),
-  movible('Día de la Constitución', '2027-02-01'),
-  movible('Natalicio de Benito Juárez', '2027-03-15'),
-  movible('Revolución Mexicana', '2027-11-15'),
+  // Se calculan: son el primer lunes de febrero, el tercero de marzo y el
+  // tercero de noviembre. De estos tres depende la fecha límite de pago, y
+  // escribirlos a mano significaba que el primer año sin capturar corriera
+  // el plazo de los cinco días hábiles sin que nadie lo notara.
+  ...ANIOS.flatMap((anio) =>
+    puentesDe(anio).map((p) => movible(p.nombre, comoTexto(p.fecha))),
+  ),
 
   // ---- Temporadas en que la alberca cierra ----------------------------
   // Son rangos a propósito: un renglón en vez de siete. No mueven el cobro.
-  {
-    tipo: 'PERIODO_VACACIONAL', nombre: 'Semana Santa 2026',
-    desde: '2026-03-30', hasta: '2026-04-05',
-    descripcion: 'La mensualidad se cobra completa.',
-  },
-
-  {
-    tipo: 'PERIODO_VACACIONAL', nombre: 'Semana Santa 2027',
-    desde: '2027-03-22', hasta: '2027-03-28',
-    descripcion: 'La mensualidad se cobra completa.',
-  },
+  // La Pascua no tiene fecha fija, así que la semana también se calcula:
+  // va del lunes al domingo de Pascua.
+  ...ANIOS.map((anio): Inhabil => {
+    const s = semanaSantaDe(anio)
+    return {
+      tipo: 'PERIODO_VACACIONAL',
+      nombre: `Semana Santa ${anio}`,
+      desde: comoTexto(s.desde),
+      hasta: comoTexto(s.hasta),
+      descripcion: 'La mensualidad se cobra completa.',
+    }
+  }),
   // Las de fin de año se calculan: caen distinto cada año porque arrancan
   // el lunes de la semana anterior a Navidad y terminan el primer viernes
   // pasado el 6 de enero. En 2026 Navidad es viernes y en 2028 es lunes.
-  ...[2026, 2027].map((anio): Inhabil => {
+  ...ANIOS.map((anio): Inhabil => {
     const v = vacacionesDeFinDeAnio(anio)
     return {
       tipo: 'PERIODO_VACACIONAL',
@@ -237,27 +258,23 @@ type Sesion = {
   curso: string
   horario: [string, string]
   dias: number[]
-  cupo: number
-  extras?: number
 }
 
 const SESIONES: Sesion[] = [
   ...bloques('06:00', '11:00', 60).map((horario): Sesion => ({
-    curso: 'ADULTOS', horario, dias: ENTRE_SEMANA, cupo: 35,
+    curso: 'ADULTOS', horario, dias: ENTRE_SEMANA,
   })),
   ...bloques('16:00', '22:00', 60).map((horario): Sesion => ({
-    curso: 'ADULTOS', horario, dias: ENTRE_SEMANA, cupo: 35,
+    curso: 'ADULTOS', horario, dias: ENTRE_SEMANA,
   })),
 
-  { curso: 'NINOS', horario: ['15:00', '16:00'], dias: [L, X, V], cupo: 25 },
+  { curso: 'NINOS', horario: ['15:00', '16:00'], dias: [L, X, V] },
 
-  // El cupo del Personalizado es provisional: se avisa al terminar. Va sin
-  // tolerancia porque son bloques individuales: no hay dónde meter a uno más.
   ...MEDIA_HORA.map((horario): Sesion => ({
-    curso: 'PERSONALIZADO', horario, dias: [L, X, V], cupo: 5, extras: 0,
+    curso: 'PERSONALIZADO', horario, dias: [L, X, V],
   })),
   ...TRES_CUARTOS.map((horario): Sesion => ({
-    curso: 'PERSONALIZADO', horario, dias: [M, J], cupo: 5, extras: 0,
+    curso: 'PERSONALIZADO', horario, dias: [M, J],
   })),
 
   // Guardavidas no se siembra: va por temporada y se agenda a mano desde
@@ -306,6 +323,40 @@ const TARIFAS: Array<{
 async function main() {
   console.log('Sembrando catálogo base…')
 
+  // ---- Roles ------------------------------------------------------------
+  //
+  // Se pueden crear más desde el panel; estos tres son los que la escuela
+  // ya usaba. La clave no se toca: de ella se agarran el seeder y la
+  // migración. Los permisos tampoco se reescriben al volver a sembrar —si
+  // alguien ajustó un rol desde la pantalla, ese ajuste manda.
+  const ROLES = [
+    {
+      clave: 'ADMINISTRADOR', nombre: 'Administrador',
+      descripcion: 'Todo, incluida la configuración de la escuela.',
+      permisos: ['VER_PANEL', 'ALUMNOS', 'COBRAR', 'LOCKERS', 'ASISTENCIA', 'CONFIGURAR', 'USUARIOS'],
+    },
+    {
+      // Sin VER_PANEL: el Capturista ve todo menos el Tablero y el Panel de
+      // control. Lo suyo es la ventanilla, no las estadísticas.
+      clave: 'CAPTURISTA', nombre: 'Capturista',
+      descripcion: 'Alumnos, cobros, lockers y credenciales. Sin tablero ni configuración.',
+      permisos: ['ALUMNOS', 'COBRAR', 'LOCKERS'],
+    },
+    {
+      clave: 'PROFESOR', nombre: 'Profesor',
+      descripcion: 'Solo su lista de asistencia, de los grupos que imparte.',
+      permisos: ['ASISTENCIA'],
+    },
+  ]
+  for (const r of ROLES) {
+    await prisma.rol.upsert({
+      where: { clave: r.clave },
+      update: { nombre: r.nombre, descripcion: r.descripcion, activo: true },
+      create: { ...r, hash: nuevoHash() },
+    })
+  }
+  console.log(`  ${ROLES.length} roles`)
+
   // ---- Usuario administrador -------------------------------------------
   //
   // Sale del entorno, nunca del código: una contraseña escrita aquí queda a
@@ -323,15 +374,16 @@ async function main() {
     console.log('     Pon ADMIN_EMAIL y ADMIN_PASSWORD en el .env y vuelve a')
     console.log('     sembrar. La contraseña necesita al menos 8 caracteres.')
   } else {
+    const rolAdmin = await prisma.rol.findUniqueOrThrow({ where: { clave: 'ADMINISTRADOR' } })
     await prisma.usuario.upsert({
       where: { email: admin.email },
       // La contraseña no se reescribe al volver a sembrar: si ya la
       // cambiaron desde el panel, ese cambio manda sobre el .env.
-      update: { nombre: admin.nombre, rol: 'ADMINISTRADOR', activo: true },
+      update: { nombre: admin.nombre, rolId: rolAdmin.id, activo: true },
       create: {
         nombre: admin.nombre,
         email: admin.email,
-        rol: 'ADMINISTRADOR',
+        rolId: rolAdmin.id,
         passwordHash: await hashPassword(admin.clave),
       },
     })
@@ -365,29 +417,45 @@ async function main() {
       ` · ${festivos.length} días que corren la fecha límite en ${ANIO}`,
   )
 
-  // ---- Ciclo anual y periodos ------------------------------------------
-  const ciclo = await prisma.cicloAnual.upsert({
-    where: { anio: ANIO },
-    update: {},
-    create: { anio: ANIO },
-  })
-
-  for (let mes = 1; mes <= 12; mes++) {
-    const clave = `${ANIO}-${String(mes).padStart(2, '0')}`
-    const fechaLimite = calcularFechaLimite(ANIO, mes, 5, festivos)
-    await prisma.periodo.upsert({
-      where: { clave },
-      update: { fechaLimite, recargo: RECARGO, precioLocker: PRECIO_LOCKER },
-      create: { cicloAnualId: ciclo.id, mes, clave, fechaLimite, recargo: RECARGO, precioLocker: PRECIO_LOCKER },
+  // ---- Ciclos anuales y sus periodos -----------------------------------
+  //
+  // Uno por año. Los festivos se resuelven por año: los que se repiten caen
+  // en día distinto en cada uno, y con ellos cambia el 5.º día hábil que es
+  // la fecha límite de pago.
+  const ciclos = new Map<number, { id: string; anio: number }>()
+  for (const anio of ANIOS) {
+    const ciclo = await prisma.cicloAnual.upsert({
+      where: { anio },
+      update: {},
+      create: { anio },
     })
+    ciclos.set(anio, ciclo)
+
+    const delAnio = festivosQueCuentan(await prisma.diaInhabil.findMany(), anio)
+    for (let mes = 1; mes <= 12; mes++) {
+      const clave = `${anio}-${String(mes).padStart(2, '0')}`
+      const fechaLimite = calcularFechaLimite(anio, mes, 5, delAnio)
+      await prisma.periodo.upsert({
+        where: { clave },
+        update: { fechaLimite, recargo: RECARGO, precioLocker: PRECIO_LOCKER },
+        create: { cicloAnualId: ciclo.id, mes, clave, fechaLimite, recargo: RECARGO, precioLocker: PRECIO_LOCKER },
+      })
+    }
   }
-  console.log('  12 periodos')
+  const ciclo = ciclos.get(ANIO)!
+  console.log(`  ${ANIOS.length} ciclos (${RANGO_ANIOS}) · ${ANIOS.length * 12} periodos`)
 
   // ---- Lockers ----------------------------------------------------------
-  for (let numero = 1; numero <= 40; numero++) {
+  //
+  // Los que hay en la alberca. Desde la pantalla se pueden agregar o quitar
+  // —si tiran una fila o ponen otra—; el seeder solo se asegura de que
+  // existan estos, y nunca los reactiva: uno descompuesto y apagado desde
+  // el panel debe quedarse apagado aunque se vuelva a sembrar.
+  const LOCKERS = 60
+  for (let numero = 1; numero <= LOCKERS; numero++) {
     await prisma.locker.upsert({ where: { numero }, update: {}, create: { numero } })
   }
-  console.log('  40 lockers')
+  console.log(`  ${LOCKERS} lockers`)
 
   // ---- Tipos de curso ---------------------------------------------------
   for (const t of TIPOS_CURSO) {
@@ -404,21 +472,40 @@ async function main() {
       },
     })
 
-    // Las temporadas se reescriben completas: esta lista manda. El año que
-    // se guarda da igual en los modos que se repiten; lo que cuenta es el
-    // día y el mes.
-    await prisma.temporadaCurso.deleteMany({ where: { tipoCursoId: curso.id } })
-    for (const temp of temporadas ?? []) {
-      await prisma.temporadaCurso.create({
-        data: {
-          hash: nuevoHash(),
-          tipoCursoId: curso.id,
-          nombre: temp.nombre ?? null,
-          desde: new Date(`${ANIO}-${temp.desde}T12:00:00`),
-          hasta: new Date(`${ANIO}-${temp.hasta}T12:00:00`),
-        },
+    // Las temporadas se emparejan por sus fechas; no se borran para volver
+    // a crearlas.
+    //
+    // La rejilla las nombra con `ON DELETE SET NULL`: borrarlas dejaba cada
+    // renglón de "Días y horarios por curso" sin su "Fechas por curso" —en
+    // blanco— cada vez que se sembraba. También cambiaba su hash, que es lo
+    // que viaja en los formularios del panel.
+    //
+    // El año que se guarda da igual en los modos que se repiten; lo que
+    // cuenta es el día y el mes.
+    const vigentesTemporada: string[] = []
+    for (const [anio, temp] of ANIOS.flatMap((a) => (temporadas ?? []).map((t) => [a, t] as const))) {
+      const desde = new Date(`${anio}-${temp.desde}T12:00:00`)
+      const hasta = new Date(`${anio}-${temp.hasta}T12:00:00`)
+      const existente = await prisma.temporadaCurso.findFirst({
+        where: { tipoCursoId: curso.id, desde, hasta },
       })
+      const fila = existente
+        ? await prisma.temporadaCurso.update({
+            where: { id: existente.id }, data: { nombre: temp.nombre ?? null },
+          })
+        : await prisma.temporadaCurso.create({
+            data: {
+              hash: nuevoHash(), tipoCursoId: curso.id,
+              nombre: temp.nombre ?? null, desde, hasta,
+            },
+          })
+      vigentesTemporada.push(fila.id)
     }
+
+    // Esta lista sigue mandando: la temporada que ya no esté aquí se va.
+    await prisma.temporadaCurso.deleteMany({
+      where: { tipoCursoId: curso.id, id: { notIn: vigentesTemporada } },
+    })
   }
   const habilitados = TIPOS_CURSO.filter((t) => t.activo !== false).length
   console.log(
@@ -485,26 +572,59 @@ async function main() {
       (cerradas.count > 0 ? ` · ${cerradas.count} cerradas` : ''),
   )
 
-  // ---- La rejilla: día × horario por curso ------------------------------
+  // ---- La rejilla: día × horario por curso, año por año -----------------
+  //
+  // Cada año tiene la suya. Un renglón es único por temporada, así que la
+  // rejilla de 2027 se arma completa sin chocar con la de 2026, y el que
+  // se inscribe al año que entra queda apuntado al renglón correcto.
   const vigentes = new Set<string>()
   let sesiones = 0
-  for (const s of SESIONES) {
-    const curso = await prisma.tipoCurso.findUniqueOrThrow({ where: { clave: s.curso } })
-    const horario = await prisma.horario.findUniqueOrThrow({
-      where: { horaInicio_horaFin: { horaInicio: s.horario[0], horaFin: s.horario[1] } },
-    })
-    for (const diaSemana of s.dias) {
-      const llave = { tipoCursoId: curso.id, horarioId: horario.id, diaSemana }
-      const fila = await prisma.sesion.upsert({
-        where: { tipoCursoId_horarioId_diaSemana: llave },
-        // El cupo no se reescribe: es el número que el administrador
-        // ajusta desde la pantalla, y pisarlo en cada despliegue volvería
-        // mentira la pantalla — lo subes el lunes y regresa solo el martes.
-        update: { activo: true },
-        create: { ...llave, hash: nuevoHash(), cupoMaximo: s.cupo, extras: s.extras ?? 10 },
+  for (const anio of ANIOS) {
+    for (const s of SESIONES) {
+      const curso = await prisma.tipoCurso.findUniqueOrThrow({ where: { clave: s.curso } })
+      const horario = await prisma.horario.findUniqueOrThrow({
+        where: { horaInicio_horaFin: { horaInicio: s.horario[0], horaFin: s.horario[1] } },
       })
-      vigentes.add(fila.id)
-      sesiones++
+
+      // Sin fechas capturadas para ese año no hay dónde colgar el renglón.
+      // No se inventa una temporada: el curso simplemente no se agenda.
+      const temporada = await prisma.temporadaCurso.findFirst({
+        where: {
+          tipoCursoId: curso.id,
+          desde: { gte: new Date(`${anio}-01-01T00:00:00`) },
+          hasta: { lte: new Date(`${anio}-12-31T23:59:59`) },
+        },
+        orderBy: { desde: 'asc' },
+      })
+      if (!temporada) continue
+
+      for (const diaSemana of s.dias) {
+        const llave = {
+          temporadaCursoId: temporada.id,
+          tipoCursoId: curso.id,
+          horarioId: horario.id,
+          diaSemana,
+        }
+
+        // La franja laboral que le toca: el día de la semana cruzado con
+        // ese horario. Sin ella el renglón sale con "Día laboral" en
+        // blanco, porque la pantalla lee de ahí lo que enseña.
+        const franja = await prisma.franjaLaboral.findFirst({
+          where: { horarioId: horario.id, diaSemana: { numero: diaSemana } },
+        })
+
+        const existente = await prisma.sesion.findFirst({ where: llave })
+        const fila = existente
+          ? await prisma.sesion.update({
+              where: { id: existente.id },
+              data: { activo: true, franjaLaboralId: existente.franjaLaboralId ?? franja?.id },
+            })
+          : await prisma.sesion.create({
+              data: { ...llave, hash: nuevoHash(), franjaLaboralId: franja?.id },
+            })
+        vigentes.add(fila.id)
+        sesiones++
+      }
     }
   }
 
@@ -515,7 +635,7 @@ async function main() {
     data: { activo: false },
   })
   console.log(
-    `  ${sesiones} sesiones en la rejilla` +
+    `  ${sesiones} sesiones en la rejilla (${RANGO_ANIOS})` +
       (apagadas.count > 0 ? ` · ${apagadas.count} viejas apagadas` : ''),
   )
 

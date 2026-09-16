@@ -62,3 +62,41 @@ export function metodosDisponibles(
       config,
     }))
 }
+
+/**
+ * Cuánto tarda en verse el pago, según por dónde entró.
+ *
+ * Se le dice antes de pagar, no después. Quien transfiere y ve su mes
+ * todavía en rojo concluye que algo salió mal, y lo que hace entonces es
+ * volver a pagar o llamar a la delegación: dos problemas que se evitan con
+ * una línea de texto.
+ *
+ * `null` para lo que se cobra en la ventanilla: ahí el recibo se entrega en
+ * el momento y no hay nada que esperar.
+ */
+export function cuandoSeRefleja(metodo: MetodoPago | string): string | null {
+  if (metodo === 'TARJETA') return 'Se refleja al momento.'
+  if (metodo === 'SPEI') {
+    return 'Normalmente en una hora, y a más tardar en un día hábil.'
+  }
+  if (metodo === 'OXXO') return 'Tarda de 1 a 3 días hábiles.'
+  return null
+}
+
+/**
+ * ¿Todavía se puede pagar ese mes por la pantalla?
+ *
+ * Solo dentro de sus cinco días hábiles. Pasada la fecha límite el cobro en
+ * línea se cierra y la persona tiene que pasar a la delegación: ahí se le
+ * calcula el recargo y se le cobra en la ventanilla, con alguien enfrente
+ * que puede explicarle por qué ahora debe más.
+ *
+ * La fecha límite viene al final del día, así que el quinto día hábil cuenta
+ * completo: quien paga a las once de la noche llegó a tiempo.
+ *
+ * Adelantar sigue valiendo. El mes que entra tiene su límite por delante, y
+ * esta regla no lo toca.
+ */
+export function sePuedePagarEnLinea(fechaLimite: Date, ahora: Date = new Date()): boolean {
+  return ahora <= fechaLimite
+}

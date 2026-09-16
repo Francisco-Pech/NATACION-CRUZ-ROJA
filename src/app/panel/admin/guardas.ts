@@ -1,17 +1,33 @@
 import { leerSesion } from '@/lib/sesion'
-import { esAdministrativo, esRoot } from '@/lib/roles'
+import { esRoot } from '@/lib/roles'
+import { esAdministrativo, tienePermiso, type Permiso } from '@/lib/permisos'
 import { aEntero } from '@/lib/validaciones'
 import type { Resultado } from './catalogo/tipos'
 
 export type { Resultado }
 
-/** Toda acción de esta sección exige Administrador, o Root. */
+/**
+ * Exige un permiso concreto. Es la puerta de todas las acciones.
+ *
+ * Root pasa siempre, aunque su rol no tenga nada marcado: sin esa red,
+ * editar mal un rol dejaría el sistema sin nadie que pueda entrar a
+ * deshacerlo, y eso no se arregla desde la aplicación.
+ */
+export async function exigirPermiso(permiso: Permiso) {
+  const usuario = await leerSesion()
+  if (!tienePermiso(usuario, permiso)) {
+    throw new Error('No tienes permiso para hacer este cambio')
+  }
+  return usuario!
+}
+
+/** Toda acción de esta sección exige poder configurar la escuela. */
 export async function exigirAdministrador() {
   const usuario = await leerSesion()
-  if (!usuario || !esAdministrativo(usuario)) {
-    throw new Error('Solo el Administrador puede hacer este cambio')
+  if (!esAdministrativo(usuario)) {
+    throw new Error('No tienes permiso para hacer este cambio')
   }
-  return usuario
+  return usuario!
 }
 
 /**

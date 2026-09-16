@@ -4,7 +4,7 @@ import { useActionState } from 'react'
 import { guardarUsuario } from '../acciones'
 import CampoClave from '@/components/CampoClave'
 
-export default function FormularioUsuario({ puedeCrearAdmin }: { puedeCrearAdmin: boolean }) {
+export default function FormularioUsuario({ roles }: { roles: Array<{ hash: string; nombre: string }> }) {
   const [error, accion, enviando] = useActionState(guardarUsuario, null)
 
   return (
@@ -20,10 +20,10 @@ export default function FormularioUsuario({ puedeCrearAdmin }: { puedeCrearAdmin
         </div>
         <div style={{ flex: '1 1 150px' }}>
           <label htmlFor="rol">Rol</label>
-          <select id="rol" name="rol" defaultValue="CAPTURISTA" required>
-            <option value="CAPTURISTA">Capturista</option>
-            <option value="PROFESOR">Profesor</option>
-            {puedeCrearAdmin && <option value="ADMINISTRADOR">Administrador</option>}
+          <select id="rol" name="rol" required>
+            {roles.map((r) => (
+              <option key={r.hash} value={r.hash}>{r.nombre}</option>
+            ))}
           </select>
         </div>
         <CampoClave deshabilitado={enviando} />

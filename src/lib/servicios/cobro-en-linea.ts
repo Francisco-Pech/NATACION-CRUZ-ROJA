@@ -28,7 +28,49 @@ export async function iniciarCobro(
   const mes = ahora.getMonth() + 1
   const cargo = await prisma.cargo.findFirst({
     where: { inscripcionId: inscripcion.id, periodo: { mes } },
-    include: { periodo: true, pagos: true },
+    select: { id: true },
+  })
+  if (!cargo) throw new Error('No hay un cargo para este mes')
+
+  return iniciarCobroDeCargo(cargo.id, metodo, urlRetorno)
+}
+
+/**
+ * Lo mismo, pero de un mes escogido a mano.
+ *
+ * La pantalla de pago en línea enseña todos los meses y deja adelantar: no
+ * siempre se cobra el que corre. El cargo llega ya elegido —y ya
+ * comprobado contra el folio de quien lo pidió— desde quien la llama.
+ */
+export async function iniciarCobroDeCargo(
+  cargoId: string,
+  metodo: MetodoPago,
+  urlRetorno: string,
+) {
+  const { pago: pagoInicial, cargo, datos } = await prepararCobro(cargoId, metodo, urlRetorno)
+
+  const intento = await pasarelaActiva().crearIntento(datos)
+
+  const pago = await prisma.pago.update({
+    where: { id: pagoInicial.id },
+    data: { stripePaymentIntentId: intento.referencia },
+  })
+
+  return { pago, siguiente: intento.siguiente, cargo }
+}
+
+/**
+ * Lo que hace falta antes de hablar con la pasarela, sea cual sea el camino.
+ *
+ * Revisa que el mes se pueda cobrar, calcula cuánto se le cobra a la
+ * persona —neto más la comisión trasladada— y deja el Pago en INICIADO. El
+ * cargo no se toca: solo la confirmación de la pasarela puede darlo por
+ * pagado.
+ */
+async function prepararCobro(cargoId: string, metodo: MetodoPago, urlRetorno: string) {
+  const cargo = await prisma.cargo.findUnique({
+    where: { id: cargoId },
+    include: { periodo: true, pagos: true, inscripcion: { include: { alumno: true } } },
   })
   if (!cargo) throw new Error('No hay un cargo para este mes')
   if (cargo.estado === EstadoCargo.PAGADO) throw new Error('Este mes ya está pagado')
@@ -52,7 +94,7 @@ export async function iniciarCobro(
     data: { estado: EstadoPago.RECHAZADO },
   })
 
-  const pagoInicial = await prisma.pago.create({
+  const pago = await prisma.pago.create({
     data: {
       cargoId: cargo.id,
       metodo,
@@ -63,21 +105,49 @@ export async function iniciarCobro(
     },
   })
 
+  return {
+    pago,
+    cargo,
+    datos: {
+      pagoId: pago.id,
+      monto: total,
+      metodo,
+      descripcion: `Natación ${cargo.periodo.clave} · ${cargo.inscripcion.folio}`,
+      urlRetorno,
+      pagador: {
+        nombre: cargo.inscripcion.alumno.nombreCompleto,
+        correo: cargo.inscripcion.alumno.email,
+      },
+    },
+  }
+}
+
+/**
+ * Lo mismo, pero mandando a la persona a la página de la pasarela.
+ *
+ * La salida para quien no quiera teclear su tarjeta en una pantalla que no
+ * conoce. Se cobra igual, se avisa por el mismo webhook y queda el mismo
+ * Pago: lo único que cambia es dónde se capturan los datos.
+ */
+export async function iniciarCobroEnLaPagina(
+  cargoId: string,
+  metodo: MetodoPago,
+  urlRetorno: string,
+) {
   const pasarela = pasarelaActiva()
-  const intento = await pasarela.crearIntento({
-    pagoId: pagoInicial.id,
-    monto: total,
-    metodo,
-    descripcion: `Natación ${cargo.periodo.clave} · ${inscripcion.folio}`,
-    urlRetorno,
+  if (!pasarela.crearPaginaDePago) {
+    throw new Error('Esta pasarela no tiene página de cobro propia.')
+  }
+
+  const { pago, cargo, datos } = await prepararCobro(cargoId, metodo, urlRetorno)
+  const sesion = await pasarela.crearPaginaDePago(datos)
+
+  await prisma.pago.update({
+    where: { id: pago.id },
+    data: { stripePaymentIntentId: sesion.referencia },
   })
 
-  const pago = await prisma.pago.update({
-    where: { id: pagoInicial.id },
-    data: { stripePaymentIntentId: intento.referencia },
-  })
-
-  return { pago, urlPago: intento.urlPago, cargo }
+  return { url: sesion.url, cargo }
 }
 
 /**

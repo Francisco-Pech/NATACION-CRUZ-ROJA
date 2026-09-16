@@ -32,12 +32,12 @@ const HORA_PRUEBA = '23:15'
 
 /** Inscribe y le da curso: sin curso no hay cargo que probar. */
 async function inscritoConCurso(nombre: string) {
-  const sesion = await sesionDePrueba(50)
-  return inscribirAlumno(nombre, cicloId, Categoria.GENERAL, [sesion.id])
+  const sesion = await sesionDePrueba()
+  return inscribirAlumno({ nombreCompleto: nombre, cicloAnualId: cicloId, sesionIds: [sesion.id] })
 }
 
-/** Una sesión propia de la prueba, para poder llenarla sin tocar la real. */
-async function sesionDePrueba(cupoMaximo = 20) {
+/** Una sesión propia de la prueba, para no tocar las reales. */
+async function sesionDePrueba() {
   // Se asegura de que el curso corra todo el año: desde el panel se le
   // puede cambiar la repetición, y con otra estas pruebas se caerían por
   // algo que no tiene que ver con lo que prueban.
@@ -50,15 +50,15 @@ async function sesionDePrueba(cupoMaximo = 20) {
     update: {},
     create: { horaInicio: HORA_PRUEBA, horaFin: '23:45', hash: nuevoHash() },
   })
-  return prisma.sesion.upsert({
-    where: {
-      tipoCursoId_horarioId_diaSemana: {
-        tipoCursoId: curso.id, horarioId: horario.id, diaSemana: 0,
-      },
-    },
-    update: { cupoMaximo, extras: 0 },
-    create: { hash: nuevoHash(), tipoCursoId: curso.id, horarioId: horario.id, diaSemana: 0, cupoMaximo, extras: 0 },
-  })
+  // Un renglón de la rejilla es único por temporada. Estas pruebas no usan
+  // ninguna, así que se busca y se actualiza a mano en vez de con `upsert`.
+  const llave = {
+    temporadaCursoId: null, tipoCursoId: curso.id, horarioId: horario.id, diaSemana: 0,
+  }
+  const yaEsta = await prisma.sesion.findFirst({ where: llave })
+  return yaEsta
+    ? prisma.sesion.update({ where: { id: yaEsta.id }, data: { activo: true } })
+    : prisma.sesion.create({ data: { ...llave, hash: nuevoHash() } })
 }
 
 beforeEach(async () => {
@@ -88,61 +88,64 @@ afterAll(async () => { await limpiar(); await prisma.$disconnect() })
 
 describe('inscribirAlumno', () => {
   it('da de alta con solo el nombre completo', async () => {
-    const i = await inscribirAlumno('Solo Nombre', cicloId)
+    const i = await inscribirAlumno({ nombreCompleto: 'Solo Nombre', cicloAnualId: cicloId })
     expect(i.alumno.nombreCompleto).toBe('Solo Nombre')
     expect(i.alumno.datosCompletos).toBe(false)
   })
 
-  it('asigna folios consecutivos dentro del mismo ciclo', async () => {
-    const a = await inscribirAlumno('Primero', cicloId)
-    const b = await inscribirAlumno('Segundo', cicloId)
-    expect(a.folio).toBe(`CRM-${ANIO}-0001`)
-    expect(b.folio).toBe(`CRM-${ANIO}-0002`)
+  it('asigna un folio CR + año + ocho caracteres, distinto en cada alta', async () => {
+    const a = await inscribirAlumno({ nombreCompleto: 'Primero', cicloAnualId: cicloId })
+    const b = await inscribirAlumno({ nombreCompleto: 'Segundo', cicloAnualId: cicloId })
+    expect(a.folio).toMatch(new RegExp(`^CR${ANIO}[A-Z2-9]{8}$`))
+    expect(b.folio).toMatch(new RegExp(`^CR${ANIO}[A-Z2-9]{8}$`))
+    // Al azar, no consecutivo: de un folio no se deduce el siguiente ni
+    // cuánta gente hay inscrita.
+    expect(b.folio).not.toBe(a.folio)
   })
 
   it('asigna un token distinto a cada inscripción', async () => {
-    const a = await inscribirAlumno('Uno', cicloId)
-    const b = await inscribirAlumno('Dos', cicloId)
+    const a = await inscribirAlumno({ nombreCompleto: 'Uno', cicloAnualId: cicloId })
+    const b = await inscribirAlumno({ nombreCompleto: 'Dos', cicloAnualId: cicloId })
     expect(a.tokenQR).not.toBe(b.tokenQR)
     expect(a.tokenQR.length).toBeGreaterThanOrEqual(43)
   })
 
-  it('el token no contiene el folio', async () => {
-    const i = await inscribirAlumno('Seguro', cicloId)
-    expect(i.tokenQR).not.toContain('CRM')
-    expect(i.tokenQR).not.toContain('0001')
+  it('el token no se deduce del folio', async () => {
+    // El folio va impreso en la credencial y se dicta por teléfono. El
+    // estado de cuenta se abre con el token y sin contraseña: si uno
+    // saliera del otro, oír el folio bastaría para leer el adeudo ajeno.
+    const i = await inscribirAlumno({ nombreCompleto: 'Seguro', cicloAnualId: cicloId })
+    expect(i.tokenQR).not.toContain(i.folio)
+    expect(i.tokenQR).not.toContain(i.folio.slice(6))
   })
 
   it('apunta al alumno a las sesiones que se le indiquen', async () => {
-    const sesion = await sesionDePrueba(5)
-    const i = await inscribirAlumno('Con horario', cicloId, Categoria.GENERAL, [sesion.id])
+    const sesion = await sesionDePrueba()
+    const i = await inscribirAlumno({ nombreCompleto: 'Con horario', cicloAnualId: cicloId, sesionIds: [sesion.id] })
     expect(await prisma.inscripcionSesion.count({ where: { inscripcionId: i.id } })).toBe(1)
   })
 
-  // La pantalla decía "El sistema no deja inscribir por encima del cupo" y
-  // no lo cumplía. Ahora sí, y del lado del servidor.
-  it('no deja inscribir por encima del cupo de la sesión', async () => {
-    const sesion = await sesionDePrueba(1)
-    await inscribirAlumno('Primero', cicloId, Categoria.GENERAL, [sesion.id])
-    await expect(
-      inscribirAlumno('Segundo', cicloId, Categoria.GENERAL, [sesion.id]),
-    ).rejects.toThrow(/cupo/i)
+  // Ya no hay tope: la alberca acepta a quien llega. Lo que se conserva es
+  // que la transacción sea todo o nada — si algo revienta, no debe quedar
+  // un alumno huérfano ni un folio quemado.
+  it('mete a cuantos lleguen a la misma sesión', async () => {
+    const sesion = await sesionDePrueba()
+    for (const nombre of ['Uno', 'Dos', 'Tres', 'Cuatro']) {
+      await inscribirAlumno({ nombreCompleto: nombre, cicloAnualId: cicloId, sesionIds: [sesion.id] })
+    }
+    expect(await prisma.inscripcionSesion.count({ where: { sesionId: sesion.id } })).toBe(4)
   })
 
-  // Si el cupo revienta, no debe quedar un alumno huérfano ni un folio
-  // quemado: o entra completo, o no entra.
-  it('si la sesión está llena no deja al alumno a medias', async () => {
-    const sesion = await sesionDePrueba(1)
-    await inscribirAlumno('Primero', cicloId, Categoria.GENERAL, [sesion.id])
+  it('si la sesión no existe no deja al alumno a medias', async () => {
     await expect(
-      inscribirAlumno('Segundo', cicloId, Categoria.GENERAL, [sesion.id]),
+      inscribirAlumno({ nombreCompleto: 'A medias', cicloAnualId: cicloId, sesionIds: ['no-existe'] }),
     ).rejects.toThrow()
-    expect(await prisma.alumno.findFirst({ where: { nombreCompleto: 'Segundo' } })).toBeNull()
+    expect(await prisma.alumno.findFirst({ where: { nombreCompleto: 'A medias' } })).toBeNull()
   })
 
   it('rechaza una sesión que no existe', async () => {
     await expect(
-      inscribirAlumno('Fantasma', cicloId, Categoria.GENERAL, ['no-existe']),
+      inscribirAlumno({ nombreCompleto: 'Fantasma', cicloAnualId: cicloId, sesionIds: ['no-existe'] }),
     ).rejects.toThrow()
   })
 })

@@ -6,8 +6,7 @@ import {
   vacacionesDeFinDeAnio,
   coberturaDelAnio,
   avisoDeCalendario,
-  MUEVE_LA_FECHA_LIMITE,
-} from '@/lib/dias-inhabiles'
+  MUEVE_LA_FECHA_LIMITE, puentesDe, semanaSantaDe } from '@/lib/dias-inhabiles'
 
 const f = (s: string) => new Date(`${s}T12:00:00`)
 const ymd = (d: Date) =>
@@ -309,5 +308,74 @@ describe('avisoDeCalendario — cuándo hay que recordarlo', () => {
   it('en noviembre y diciembre no molesta si el año que viene ya está', () => {
     expect(avisoDeCalendario(noviembre, listo, listo)).toBeNull()
     expect(avisoDeCalendario(diciembre, listo, listo)).toBeNull()
+  })
+})
+
+/** "2026-02-02", que es como las escribe el seeder. */
+const comoTexto = (d: Date) =>
+  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+
+describe('puentesDe', () => {
+  // Los de 2026 y 2027 estaban escritos a mano en el seeder. El cálculo
+  // tiene que dar exactamente esos: si no, está mal el cálculo.
+  it('da los mismos que estaban capturados a mano en 2026', () => {
+    expect(puentesDe(2026).map((p) => comoTexto(p.fecha))).toEqual([
+      '2026-02-02', '2026-03-16', '2026-11-16',
+    ])
+  })
+
+  it('da los mismos que estaban capturados a mano en 2027', () => {
+    expect(puentesDe(2027).map((p) => comoTexto(p.fecha))).toEqual([
+      '2027-02-01', '2027-03-15', '2027-11-15',
+    ])
+  })
+
+  it('sigue la regla en los años que nadie capturó', () => {
+    expect(puentesDe(2028).map((p) => comoTexto(p.fecha))).toEqual([
+      '2028-02-07', '2028-03-20', '2028-11-20',
+    ])
+    expect(puentesDe(2030).map((p) => comoTexto(p.fecha))).toEqual([
+      '2030-02-04', '2030-03-18', '2030-11-18',
+    ])
+  })
+
+  it('cada uno viene con su nombre', () => {
+    expect(puentesDe(2026).map((p) => p.nombre)).toEqual([
+      'Día de la Constitución', 'Natalicio de Benito Juárez', 'Revolución Mexicana',
+    ])
+  })
+
+  it('todos caen en lunes', () => {
+    for (const anio of [2026, 2027, 2028, 2029, 2030]) {
+      for (const puente of puentesDe(anio)) expect(puente.fecha.getDay()).toBe(1)
+    }
+  })
+})
+
+describe('semanaSantaDe', () => {
+  // También estaban a mano: del lunes anterior al domingo de Pascua.
+  it('da la misma que estaba capturada a mano en 2026', () => {
+    const { desde, hasta } = semanaSantaDe(2026)
+    expect([comoTexto(desde), comoTexto(hasta)]).toEqual(['2026-03-30', '2026-04-05'])
+  })
+
+  it('da la misma que estaba capturada a mano en 2027', () => {
+    const { desde, hasta } = semanaSantaDe(2027)
+    expect([comoTexto(desde), comoTexto(hasta)]).toEqual(['2027-03-22', '2027-03-28'])
+  })
+
+  // Pascua 2028 cae el 16 de abril, 2029 el 1 de abril y 2030 el 21.
+  it('calcula la Pascua de los años que nadie capturó', () => {
+    expect(comoTexto(semanaSantaDe(2028).hasta)).toBe('2028-04-16')
+    expect(comoTexto(semanaSantaDe(2029).hasta)).toBe('2029-04-01')
+    expect(comoTexto(semanaSantaDe(2030).hasta)).toBe('2030-04-21')
+  })
+
+  it('siempre va de lunes a domingo', () => {
+    for (const anio of [2026, 2027, 2028, 2029, 2030]) {
+      const { desde, hasta } = semanaSantaDe(anio)
+      expect(desde.getDay()).toBe(1)
+      expect(hasta.getDay()).toBe(0)
+    }
   })
 })

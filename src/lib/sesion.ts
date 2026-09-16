@@ -1,8 +1,7 @@
 import { cookies } from 'next/headers'
 import { createHmac, timingSafeEqual } from 'node:crypto'
 import { prisma } from '@/lib/db'
-import { esRoot } from '@/lib/roles'
-import type { Rol } from '@prisma/client'
+import { tienePermiso, type Permiso } from '@/lib/permisos'
 
 const COOKIE = 'sesion_natacion'
 const DIAS = 8
@@ -47,7 +46,20 @@ export async function cerrarSesion() {
 }
 
 /** El correo va en la sesión porque Root se reconoce por él, no por un rol. */
-export type UsuarioSesion = { id: string; nombre: string; email: string; rol: Rol }
+/** El rol viene con sus permisos: es lo que decide qué puede hacer. */
+export type RolDeSesion = {
+  clave: string
+  nombre: string
+  permisos: string[]
+  activo: boolean
+}
+
+export type UsuarioSesion = {
+  id: string
+  nombre: string
+  email: string
+  rol: RolDeSesion
+}
 
 export async function leerSesion(): Promise<UsuarioSesion | null> {
   const almacen = await cookies()
@@ -59,21 +71,29 @@ export async function leerSesion(): Promise<UsuarioSesion | null> {
 
   const usuario = await prisma.usuario.findUnique({
     where: { id: usuarioId },
-    select: { id: true, nombre: true, email: true, rol: true, activo: true },
+    select: {
+      id: true, nombre: true, email: true, activo: true,
+      rol: { select: { clave: true, nombre: true, permisos: true, activo: true } },
+    },
   })
   if (!usuario || !usuario.activo) return null
 
-  return { id: usuario.id, nombre: usuario.nombre, email: usuario.email, rol: usuario.rol }
+  return {
+    id: usuario.id, nombre: usuario.nombre, email: usuario.email, rol: usuario.rol,
+  }
 }
 
 /**
- * Lanza si no hay sesión o el rol no alcanza. Las páginas la usan para
- * blindarse. Root pasa siempre: puede todo lo que puede cualquier otro.
+ * Lanza si no hay sesión o si le falta el permiso. Las páginas y las
+ * acciones la usan para blindarse.
+ *
+ * Root pasa siempre, aunque su rol no tenga nada marcado: es la red de
+ * seguridad. Sin eso, alguien puede editar un rol y dejar el sistema sin
+ * nadie capaz de entrar a deshacerlo.
  */
-export async function requiereRol(...roles: Rol[]): Promise<UsuarioSesion> {
+export async function requierePermiso(permiso: Permiso): Promise<UsuarioSesion> {
   const usuario = await leerSesion()
   if (!usuario) throw new Error('Sesión requerida')
-  if (esRoot(usuario)) return usuario
-  if (!roles.includes(usuario.rol)) throw new Error('No autorizado')
+  if (!tienePermiso(usuario, permiso)) throw new Error('No autorizado')
   return usuario
 }

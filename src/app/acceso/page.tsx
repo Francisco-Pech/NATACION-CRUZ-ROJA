@@ -1,10 +1,11 @@
 import { redirect } from 'next/navigation'
+import { enlacesDelPanel } from '@/lib/navegacion'
 import { leerSesion } from '@/lib/sesion'
 import FormularioAcceso from './formulario'
 
 export default async function PaginaAcceso() {
   const usuario = await leerSesion()
-  if (usuario) redirect(usuario.rol === 'PROFESOR' ? '/profesor' : '/panel')
+  if (usuario) redirect(enlacesDelPanel(usuario)[0]?.href ?? '/acceso')
 
   return (
     <div className="contenedor angosto" style={{ paddingTop: '3rem' }}>
