@@ -13,6 +13,7 @@
     "db:migrate": "prisma migrate dev",
     "db:seed": "prisma generate && tsx prisma/seed.ts",
     "db:seed:demo": "prisma generate && tsx prisma/seed-demo.ts",
+    "db:seed:alumnos": "prisma generate && tsx prisma/seed-alumnos.ts",
     "prebuild": "prisma generate",
     "predev": "prisma generate",
     "pretest": "prisma generate",
