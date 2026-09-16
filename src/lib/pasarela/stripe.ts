@@ -181,4 +181,19 @@ export class PasarelaStripe implements Pasarela {
       },
     }
   }
+
+  /**
+   * Cómo va ese intento, según Stripe.
+   *
+   * `succeeded` es dinero adentro; `processing` todavía no se sabe, y es
+   * lo normal en OXXO y en transferencia. Cualquier otra cosa —cancelado,
+   * rechazado, esperando una acción que nadie hizo— no es un pago.
+   */
+  async estadoDelCobro(referencia: string): Promise<'PAGADO' | 'EN_PROCESO' | 'FALLIDO'> {
+    const intento = await this.stripe.paymentIntents.retrieve(referencia)
+    if (intento.status === 'succeeded') return 'PAGADO'
+    if (intento.status === 'processing') return 'EN_PROCESO'
+    return 'FALLIDO'
+  }
+
 }

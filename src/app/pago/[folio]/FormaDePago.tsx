@@ -142,6 +142,7 @@ export default function FormaDePago({
               ) : arranque && arranque.ok ? (
                 <>
                   <Proceso
+                    folio={folio}
                     siguiente={arranque.siguiente}
                     codigoDeBarras={arranque.codigoDeBarras}
                     total={forma.total}
@@ -244,12 +245,14 @@ export default function FormaDePago({
 // --------------------------------------------------- lo que sigue, por método
 
 function Proceso({
+  folio,
   siguiente,
   codigoDeBarras,
   total,
   cerrarAqui,
   alTerminar,
 }: {
+  folio: string
   siguiente: NonNullable<Awaited<ReturnType<typeof iniciarPago>> & { ok: true }>['siguiente']
   codigoDeBarras: string | null
   total: string
@@ -259,6 +262,7 @@ function Proceso({
   if (siguiente.tipo === 'TARJETA') {
     return (
       <PagoConTarjeta
+        folio={folio}
         claveDelCliente={siguiente.claveDelCliente}
         clavePublica={siguiente.clavePublica}
         total={total}

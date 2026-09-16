@@ -73,3 +73,22 @@ export function nombreParaRecibo(nombreCompleto: string): string {
 
   return `${limpio} Alumno`
 }
+
+/**
+ * El número del intento de pago, sacado de la clave que usa el navegador.
+ *
+ * La clave del cliente es `pi_xxx_secret_yyy`: adelante del `_secret` va el
+ * intento. Sirve para preguntarle a Stripe si el dinero entró en vez de
+ * creerle al navegador, que puede decir lo que sea.
+ *
+ * Devuelve nada si eso no es un intento de pago. Preguntarle a Stripe por
+ * una cadena inventada no tiene por qué llegar a intentarse.
+ */
+export function idDelIntento(claveDelCliente: string): string | null {
+  const limpia = (claveDelCliente ?? '').trim()
+  if (!limpia.startsWith('pi_')) return null
+
+  const id = limpia.split('_secret')[0]
+  // "pi_" a secas no nombra ningún intento.
+  return id.length > 3 ? id : null
+}

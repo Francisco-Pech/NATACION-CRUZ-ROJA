@@ -1,6 +1,8 @@
 'use client'
 
 import { useState } from 'react'
+import { useRouter } from 'next/navigation'
+import { confirmarPagoDeTarjeta } from './acciones'
 import {
   CardCvcElement,
   CardExpiryElement,
@@ -24,16 +26,20 @@ import { loadStripe } from '@stripe/stripe-js'
  * ni siquiera por nuestro JavaScript. Nosotros solo tenemos la clave del
  * intento, que no sirve para cobrar de más ni para ver la tarjeta.
  *
- * El pago se da por bueno cuando lo avisa el webhook, no cuando este
- * formulario dice que salió bien.
+ * Con tarjeta el cobro se cierra en el momento: cuando Stripe responde
+ * que pasó, el servidor le pregunta a Stripe si el dinero entró y marca el
+ * mes. Este formulario no da nada por bueno; solo avisa que hay algo que
+ * revisar.
  */
 export default function PagoConTarjeta({
+  folio,
   claveDelCliente,
   clavePublica,
   total,
   cerrarAqui,
   alTerminar,
 }: {
+  folio: string
   claveDelCliente: string
   clavePublica: string
   total: string
@@ -46,7 +52,7 @@ export default function PagoConTarjeta({
   return (
     <Elements stripe={stripe} options={{ locale: 'es-419' }}>
       <Formulario
-        claveDelCliente={claveDelCliente} total={total}
+        folio={folio} claveDelCliente={claveDelCliente} total={total}
         cerrarAqui={cerrarAqui} alTerminar={alTerminar}
       />
     </Elements>
@@ -67,16 +73,19 @@ const PINTA = {
 }
 
 function Formulario({
+  folio,
   claveDelCliente,
   total,
   cerrarAqui,
   alTerminar,
 }: {
+  folio: string
   claveDelCliente: string
   total: string
   cerrarAqui: string
   alTerminar: (mensaje: string) => void
 }) {
+  const router = useRouter()
   const stripe = useStripe()
   const elements = useElements()
   const [titular, setTitular] = useState('')
@@ -115,7 +124,18 @@ function Formulario({
     }
 
     if (paymentIntent?.status === 'succeeded') {
-      alTerminar('Tu tarjeta pasó. En cuanto el banco lo confirme, tu mes queda cubierto.')
+      // El servidor le pregunta a Stripe y marca el mes. No se le cree a
+      // esta pantalla: aquí solo se avisa que hay algo que revisar.
+      const { pagado } = await confirmarPagoDeTarjeta(folio, claveDelCliente)
+      if (pagado) {
+        alTerminar('Listo, tu mes quedó pagado.')
+        router.refresh()
+        return
+      }
+
+      // Stripe dijo que pasó pero el cobro todavía no queda marcado. No se
+      // le promete nada a nadie: el aviso firmado lo va a cerrar solo.
+      alTerminar('Tu pago se registró. En cuanto se confirme, tu mes queda cubierto.')
       return
     }
 

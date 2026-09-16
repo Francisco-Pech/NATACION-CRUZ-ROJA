@@ -63,4 +63,15 @@ export interface Pasarela {
    * pagar lo mismo. La pasarela de demostración no la tiene.
    */
   crearPaginaDePago?(datos: DatosIntento): Promise<{ referencia: string; url: string }>
+  /**
+   * Cómo va un cobro, preguntándoselo a la pasarela.
+   *
+   * Es lo que deja cerrar la tarjeta en el acto: el navegador dice "ya
+   * terminé" y el servidor viene aquí a preguntar si el dinero entró de
+   * verdad. Nunca se le cree al navegador, que puede decir cualquier cosa.
+   *
+   * OXXO y transferencia no lo usan: ahí no hay nada que preguntar
+   * todavía, y quien avisa es el webhook firmado, horas o días después.
+   */
+  estadoDelCobro?(referencia: string): Promise<'PAGADO' | 'EN_PROCESO' | 'FALLIDO'>
 }

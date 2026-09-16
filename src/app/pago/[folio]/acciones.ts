@@ -1,12 +1,15 @@
 'use server'
 
 import { redirect } from 'next/navigation'
+import { revalidatePath } from 'next/cache'
 import { prisma } from '@/lib/db'
 import { normalizarFolio } from '@/lib/folio'
 import { faltaUnPeriodoAntes } from '@/lib/cargos'
 import { pasaElTope } from '@/lib/cobros'
-import { iniciarCobroDeCargo, iniciarCobroEnLaPagina } from '@/lib/servicios/cobro-en-linea'
-import type { Siguiente } from '@/lib/pasarela'
+import {
+  iniciarCobroDeCargo, iniciarCobroEnLaPagina, confirmarCobro,
+} from '@/lib/servicios/cobro-en-linea'
+import { idDelIntento, pasarelaActiva, type Siguiente } from '@/lib/pasarela'
 import { toBuffer } from 'bwip-js/node'
 
 /** La referencia de OXXO dibujada como el código que lee la caja. */
@@ -125,6 +128,55 @@ async function elCargoQueToca(folioTecleado: string, cargoId: string) {
   }
 
   return { cargo }
+}
+
+/**
+ * Cierra el cobro con tarjeta en el momento, sin esperar el webhook.
+ *
+ * Con tarjeta el dinero entra ahí mismo: hacerle esperar el aviso firmado
+ * le dejaba el mes en pendiente y un recado diciendo que el banco ya
+ * confirmará, cuando ya había confirmado.
+ *
+ * Lo que manda el navegador es solo la clave del cobro que acaba de hacer;
+ * quién dice si el dinero entró es Stripe, al que se le pregunta desde
+ * aquí. Una respuesta falsificada del navegador no mueve nada, porque
+ * igual se va a preguntar.
+ *
+ * Y el cobro tiene que ser de esta cuenta: la clave de otra persona no
+ * marca nada aquí.
+ *
+ * El webhook sigue puesto como red. Si el navegador se cierra justo en
+ * este instante, el aviso firmado lo marca igual, y marcarlo dos veces no
+ * cobra dos veces.
+ */
+export async function confirmarPagoDeTarjeta(
+  folioTecleado: string,
+  claveDelCliente: string,
+): Promise<{ pagado: boolean }> {
+  const referencia = idDelIntento(claveDelCliente)
+  if (!referencia) return { pagado: false }
+
+  const cuenta = await cuentaDelFolio(folioTecleado)
+  if (!cuenta) return { pagado: false }
+
+  const suyo = await prisma.pago.findFirst({
+    where: {
+      stripePaymentIntentId: referencia,
+      cargo: { inscripcion: { alumnoId: cuenta.inscripcion.alumnoId } },
+    },
+    select: { id: true },
+  })
+  if (!suyo) return { pagado: false }
+
+  const pasarela = pasarelaActiva()
+  if (!pasarela.estadoDelCobro) return { pagado: false }
+
+  const estado = await pasarela.estadoDelCobro(referencia)
+  if (estado !== 'PAGADO') return { pagado: false }
+
+  await confirmarCobro(referencia)
+  revalidatePath(`/pago/${normalizarFolio(folioTecleado)}`)
+  return { pagado: true }
 }
 
 export type Arranque =
