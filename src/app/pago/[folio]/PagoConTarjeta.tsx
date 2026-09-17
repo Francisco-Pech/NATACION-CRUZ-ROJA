@@ -128,7 +128,11 @@ function Formulario({
       // esta pantalla: aquí solo se avisa que hay algo que revisar.
       const { pagado } = await confirmarPagoDeTarjeta(folio, claveDelCliente)
       if (pagado) {
-        alTerminar('Listo, tu mes quedó pagado.')
+        // Sin ventana que cerrar: el cobro terminó, así que se vuelve a la
+        // cuenta con el recado arriba y los meses ya releídos. Dejar un
+        // modal con un botón "Cerrar" era pedirle un clic más a alguien
+        // que ya terminó de pagar.
+        router.push(`/pago/${folio}?bien=${encodeURIComponent('Listo, tu mes quedó pagado con tarjeta.')}`)
         router.refresh()
         return
       }
