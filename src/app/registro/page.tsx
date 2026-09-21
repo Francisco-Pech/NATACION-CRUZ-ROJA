@@ -37,8 +37,18 @@ export default async function Registro() {
         </div>
         <h1 style={{ margin: '.35rem 0 .15rem' }}>Escuela de Natación</h1>
         <p className="silencio" style={{ margin: 0 }}>
-          Deja tus datos para inscribirte. Te esperamos en la delegación para terminar.
+          Deja tus datos para pedir tu lugar.
         </p>
+      </div>
+
+      {/* Antes del formulario y no después: quien lo llena tiene que saber
+          desde el principio que esto no lo inscribe, o va a creer que ya
+          quedó y va a esperar su credencial en vano. */}
+      <div className="aviso">
+        <strong>Esto todavía no te inscribe.</strong> Lo que envías es una solicitud: la
+        Cruz Roja la revisa y decide si hay lugar en ese curso y horario. Cuando te den
+        el visto bueno, pasas a la delegación por tu folio y tu credencial, y hasta
+        entonces eres alumno. No se te cobra nada por solicitarlo.
       </div>
 
       <div className="tarjeta">
@@ -55,7 +65,7 @@ export default async function Registro() {
             precioLocker={actual ? pesos(actual.periodo.precioLocker) : ''}
             accionPropia={pedirRegistro}
             textoBoton="Enviar mi solicitud"
-            notaLocker="Escogerlo no lo aparta: se revisa cuando confirmemos tu inscripción, y si ya lo tomaron te damos otro."
+            notaLocker="El locker que escojas no queda apartado: se revisa cuando la delegación acepte tu solicitud, y si para entonces ya lo tomaron se te asigna otro."
           />
         )}
       </div>

@@ -147,13 +147,14 @@ export default function FormularioAlumno({
                 ...lockers.map((l) => ({ valor: l.id, etiqueta: `Locker ${l.numero}` })),
               ]}
             />
-            {notaLocker && (
-              <p className="silencio" style={{ fontSize: '.8rem', margin: '.3rem 0 0' }}>
-                {notaLocker}
-              </p>
-            )}
           </div>
         </div>
+
+        {notaLocker && (
+          <p className="silencio" style={{ fontSize: '.82rem', margin: '.5rem 0 0' }}>
+            {notaLocker}
+          </p>
+        )}
 
         {/* Solo cuando hay descuento: es donde se contesta "¿cuánto le
             dura?". Una cortesía se pone del día a ese mismo día; un INAPAM
