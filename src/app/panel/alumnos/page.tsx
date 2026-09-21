@@ -129,6 +129,7 @@ export default async function Alumnos({
     const solicitudes: Solicitud[] = pendientes.map((s) => ({
       hash: s.hash,
       nombreCompleto: s.nombreCompleto,
+      correo: s.correo,
       curso: s.tipoCurso.nombre,
       horario: `${s.horario.horaInicio}–${s.horario.horaFin}`,
       dias: [

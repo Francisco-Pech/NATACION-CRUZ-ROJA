@@ -700,6 +700,11 @@ model SolicitudDeRegistro {
   horarioId      String
   /// Vacío: no quiere locker. No todos lo usan y se cobra aparte cada mes.
   lockerId       String?
+  /// Para avisarle que lo aceptaron: su folio y su código llegan ahí.
+  /// Vacío solo en las solicitudes anteriores a que se pidiera.
+  correo         String?
+  /// Cuándo salió ese aviso. Vacío: no se ha mandado.
+  avisadoEn      DateTime?
   /// Lo mismo que se captura en el mostrador: si pide factura, con qué datos.
   factura          Boolean @default(false)
   rfc              String?

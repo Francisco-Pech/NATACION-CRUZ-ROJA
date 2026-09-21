@@ -46,9 +46,7 @@ export default async function Registro() {
           quedó y va a esperar su credencial en vano. */}
       <div className="aviso">
         <strong>Esto todavía no te inscribe.</strong> Lo que envías es una solicitud: la
-        Cruz Roja la revisa y decide si hay lugar en ese curso y horario. Cuando te den
-        el visto bueno, pasas a la delegación por tu folio y tu credencial, y hasta
-        entonces eres alumno. No se te cobra nada por solicitarlo.
+        Cruz Roja la revisa y decide si hay lugar en ese curso y horario.
       </div>
 
       <div className="tarjeta">
@@ -66,6 +64,7 @@ export default async function Registro() {
             accionPropia={pedirRegistro}
             textoBoton="Enviar mi solicitud"
             esperarCompleto
+            pedirCorreo
             notaLocker="El locker que escojas no queda apartado: se revisa cuando la delegación acepte tu solicitud, y si para entonces ya lo tomaron se te asigna otro."
           />
         )}

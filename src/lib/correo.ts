@@ -28,6 +28,8 @@ export async function enviarCorreo(mensaje: {
   para: string
   asunto: string
   texto: string
+  /** Archivos que van con el correo, ya en base64. */
+  adjuntos?: Array<{ nombre: string; base64: string }>
 }): Promise<boolean> {
   const clave = process.env.RESEND_API_KEY?.trim()
   if (!clave) return false
@@ -44,6 +46,14 @@ export async function enviarCorreo(mensaje: {
         to: [mensaje.para],
         subject: mensaje.asunto,
         text: mensaje.texto,
+        ...(mensaje.adjuntos?.length
+          ? {
+              attachments: mensaje.adjuntos.map((a) => ({
+                filename: a.nombre,
+                content: a.base64,
+              })),
+            }
+          : {}),
       }),
     })
     return respuesta.ok

@@ -14,6 +14,7 @@ import { REGIMENES_FISCALES, USO_CFDI } from '@/lib/facturacion'
 /** Con qué arranca el formulario, y a qué vuelve tras un alta buena. */
 const VACIO = {
   nombreCompleto: '',
+  correo: '',
   rfc: '',
   razonSocial: '',
   codigoPostal: '',
@@ -39,6 +40,7 @@ export default function FormularioAlumno({
   textoBoton,
   notaLocker,
   esperarCompleto = false,
+  pedirCorreo = false,
 }: {
   grupos: GrupoHorario[]
   /** Vacío esconde el campo: la inscripción abierta no da descuentos. */
@@ -58,6 +60,11 @@ export default function FormularioAlumno({
    * se puede apretar a medias parece que funcionó y no funcionó.
    */
   esperarCompleto?: boolean
+  /**
+   * Pide un correo. Solo la inscripción abierta: es por donde se le avisa
+   * que lo aceptaron, porque no va a pasar a preguntar.
+   */
+  pedirCorreo?: boolean
   /** Una nota bajo el locker. La usa la inscripción abierta, que no aparta. */
   notaLocker?: string
 }) {
@@ -95,6 +102,7 @@ export default function FormularioAlumno({
 
   const faltaAlgo =
     datos.nombreCompleto.trim() === '' ||
+    (pedirCorreo && datos.correo.trim() === '') ||
     grupoPuesto === '' ||
     (factura &&
       (datos.rfc.trim() === '' ||
@@ -172,6 +180,21 @@ export default function FormularioAlumno({
             />
           </div>
         </div>
+
+        {pedirCorreo && (
+          <div style={{ marginTop: '.2rem' }}>
+            <label htmlFor="correo">Correo electrónico</label>
+            <input
+              id="correo" name="correo" type="email" required disabled={enviando}
+              placeholder="ana@ejemplo.mx" autoComplete="email"
+              value={datos.correo} onChange={cambiar('correo')}
+            />
+            <p className="silencio" style={{ fontSize: '.82rem', margin: '.3rem 0 0' }}>
+              Solo se usa para avisarte si aceptan tu solicitud: ahí te llegan el nombre
+              del alumno, su folio y su código. Nada más.
+            </p>
+          </div>
+        )}
 
         {notaLocker && (
           <p className="silencio" style={{ fontSize: '.82rem', margin: '.5rem 0 0' }}>
@@ -315,7 +338,9 @@ export default function FormularioAlumno({
         >
           {esperarCompleto && faltaAlgo && !enviando && (
             <span className="silencio" style={{ fontSize: '.82rem' }}>
-              Falta llenar {factura ? 'el nombre, el curso o los datos de factura' : 'el nombre o el curso'}.
+              Falta llenar {factura
+                ? 'el nombre, el correo, el curso o los datos de factura'
+                : 'el nombre, el correo o el curso'}.
             </span>
           )}
           <button

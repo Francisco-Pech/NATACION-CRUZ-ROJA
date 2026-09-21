@@ -7,6 +7,7 @@ import type { Resultado } from '../admin/catalogo/tipos'
 export type Solicitud = {
   hash: string
   nombreCompleto: string
+  correo: string | null
   curso: string
   horario: string
   dias: string
@@ -75,6 +76,9 @@ function FilaSolicitud({ solicitud }: { solicitud: Solicitud }) {
       <tr>
         <td>
           <strong>{solicitud.nombreCompleto}</strong>
+          {solicitud.correo && (
+            <div className="silencio" style={{ fontSize: '.82rem' }}>{solicitud.correo}</div>
+          )}
           {solicitud.yaExiste && (
             <div style={{ fontSize: '.8rem', color: '#b45309' }}>
               Ya hay un alumno con este nombre

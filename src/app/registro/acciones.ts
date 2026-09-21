@@ -29,6 +29,13 @@ export async function pedirRegistro(_previo: Resultado, datos: FormData): Promis
     }
     if (nombreCompleto.length > LARGO_NOMBRE.max) return no('Ese nombre es demasiado largo.')
 
+    // El correo: es por donde se le va a avisar si lo aceptan, así que sin
+    // él la solicitud no sirve de nada aunque se guarde.
+    const correo = texto(datos, 'correo').toLowerCase()
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(correo)) {
+      return no('Escribe un correo electrónico válido: ahí te avisamos si te aceptan.')
+    }
+
     // ---- el curso y el horario ----
     const sesionHashes = datos.getAll('sesiones').map(String).filter(Boolean)
     if (sesionHashes.length === 0) return no('Escoge el curso y el horario.')
@@ -94,6 +101,7 @@ export async function pedirRegistro(_previo: Resultado, datos: FormData): Promis
       data: {
         hash: nuevoHash(),
         nombreCompleto,
+        correo,
         tipoCursoId: sesiones[0].tipoCursoId,
         horarioId: sesiones[0].horarioId,
         lockerId: locker?.id ?? null,
@@ -107,8 +115,8 @@ export async function pedirRegistro(_previo: Resultado, datos: FormData): Promis
     return {
       ok: true,
       mensaje:
-        'Recibimos tu solicitud. Pasa a la delegación a confirmar tu inscripción: ahí te' +
-        ' entregan tu folio y tu credencial. Todavía no se te ha cobrado nada.',
+        `Recibimos tu solicitud. Cuando la Cruz Roja la revise te avisamos a ${correo}:` +
+        ' ahí te llegan el folio del alumno y su código. Todavía no se te ha cobrado nada.',
     }
   } catch (e) {
     return no(e instanceof Error ? e.message : 'No se pudo enviar la solicitud.')
