@@ -1,57 +1,33 @@
 import Link from 'next/link'
 import { pedirRegistro } from './acciones'
 import { gruposAbiertos, lockersLibres } from '@/lib/servicios/registro'
-import CampoNombre from './CampoNombre'
+import FormularioAlumno from '@/app/panel/alumnos/FormularioAlumno'
+import { periodoActual } from '@/lib/periodo-actual'
+import { pesos } from '@/lib/formato'
 
 /**
- * La inscripción abierta: quien quiere entrar a la escuela deja sus datos.
+ * La inscripción abierta: quien quiere entrar deja sus datos.
  *
- * No pide contraseña, así que no crea alumnos: deja una solicitud que
- * alguien de la delegación revisa y da de alta. Hasta entonces no hay
- * folio, ni meses, ni nada que cobrar.
+ * Es el mismo formulario del mostrador, sin descuento —eso lo decide la
+ * delegación, no quien se inscribe— y con otra acción: no crea alumno ni
+ * folio, deja una solicitud que alguien revisa y da de alta.
  *
- * Cuatro campos y ya. Cada campo de más en un formulario abierto es gente
- * que lo abandona a la mitad, y los datos que faltan se piden en la
- * ventanilla, que es donde de todos modos hay que presentarse.
+ * Es el mismo componente a propósito. Con dos formularios para lo mismo,
+ * uno se arregla y el otro se queda atrás.
  */
-export default async function Registro({
-  searchParams,
-}: {
-  searchParams: Promise<{ mal?: string; listo?: string }>
-}) {
-  const { mal, listo } = await searchParams
-  const [grupos, lockers] = await Promise.all([gruposAbiertos(), lockersLibres()])
+/**
+ * No se prerenderiza: los grupos abiertos y los lockers libres cambian, y
+ * una página congelada en el momento del despliegue ofrecería horarios que
+ * ya cerraron y lockers que ya tomaron.
+ */
+export const dynamic = 'force-dynamic'
 
-  if (listo) {
-    return (
-      <div className="contenedor angosto">
-        <div style={{ textAlign: 'center', margin: '2rem 0 1.4rem' }}>
-          <div className="silencio" style={{ fontSize: '.8rem', letterSpacing: '.05em' }}>
-            CRUZ ROJA MEXICANA · CANCÚN
-          </div>
-          <h1 style={{ margin: '.35rem 0 .15rem' }}>Recibimos tu solicitud</h1>
-        </div>
-
-        <div className="tarjeta" style={{ textAlign: 'center' }}>
-          <p style={{ marginTop: 0 }}>
-            Gracias. Tu registro quedó en la lista de la delegación.
-          </p>
-          <p className="silencio" style={{ fontSize: '.9rem' }}>
-            <strong>Falta un paso, y es en persona.</strong> Pasa a la delegación a
-            confirmar tu inscripción: ahí te dan tu folio y tu credencial, y desde ese
-            momento puedes pagar en línea.
-          </p>
-          <p className="silencio" style={{ fontSize: '.86rem', marginBottom: 0 }}>
-            Todavía no se te ha cobrado nada.
-          </p>
-        </div>
-
-        <p style={{ textAlign: 'center', marginTop: '1rem' }}>
-          <Link href="/registro">Registrar a alguien más</Link>
-        </p>
-      </div>
-    )
-  }
+export default async function Registro() {
+  const [grupos, lockers, actual] = await Promise.all([
+    gruposAbiertos(),
+    lockersLibres(),
+    periodoActual(),
+  ])
 
   return (
     <div className="contenedor angosto">
@@ -65,62 +41,24 @@ export default async function Registro({
         </p>
       </div>
 
-      {mal && <div className="error">{mal}</div>}
-
-      {grupos.length === 0 ? (
-        <div className="tarjeta">
+      <div className="tarjeta">
+        {grupos.length === 0 ? (
           <p style={{ margin: 0 }}>
             <strong>Por ahora no hay grupos abiertos.</strong> Vuelve más adelante o pasa a
             la delegación a preguntar.
           </p>
-        </div>
-      ) : (
-        <div className="tarjeta">
-          <form action={pedirRegistro}>
-            <CampoNombre />
-
-            <label htmlFor="grupo" style={{ marginTop: '.9rem', display: 'block' }}>
-              Curso y horario
-            </label>
-            <select id="grupo" name="grupo" required defaultValue="">
-              <option value="" disabled>Escoge…</option>
-              {grupos.map((g) => (
-                <option key={g.clave} value={g.clave}>
-                  {g.cursoNombre} · {g.horario} · {g.dias}
-                </option>
-              ))}
-            </select>
-
-            <label htmlFor="locker" style={{ marginTop: '.9rem', display: 'block' }}>
-              Locker
-            </label>
-            <select id="locker" name="locker" defaultValue="">
-              <option value="">Sin locker</option>
-              {lockers.map((l) => (
-                <option key={l.numero} value={l.numero}>Locker {l.numero}</option>
-              ))}
-            </select>
-            <p className="silencio" style={{ fontSize: '.82rem', marginTop: '.3rem' }}>
-              Se cobra aparte cada mes. Si no lo necesitas, déjalo en <em>Sin locker</em>.
-            </p>
-
-            <label htmlFor="telefono" style={{ marginTop: '.9rem', display: 'block' }}>
-              Teléfono <span className="silencio">(opcional)</span>
-            </label>
-            <input
-              id="telefono" name="telefono" type="tel" inputMode="tel"
-              placeholder="998 123 4567" autoComplete="tel"
-            />
-            <p className="silencio" style={{ fontSize: '.82rem', marginTop: '.3rem' }}>
-              Por si necesitamos confirmarte algo antes de que vengas.
-            </p>
-
-            <div className="fila" style={{ justifyContent: 'flex-end', marginTop: '1.1rem' }}>
-              <button className="boton" type="submit">Enviar mi solicitud</button>
-            </div>
-          </form>
-        </div>
-      )}
+        ) : (
+          <FormularioAlumno
+            grupos={grupos}
+            descuentos={[]}
+            lockers={lockers}
+            precioLocker={actual ? pesos(actual.periodo.precioLocker) : ''}
+            accionPropia={pedirRegistro}
+            textoBoton="Enviar mi solicitud"
+            notaLocker="Escogerlo no lo aparta: se revisa cuando confirmemos tu inscripción, y si ya lo tomaron te damos otro."
+          />
+        )}
+      </div>
 
       <p className="silencio" style={{ fontSize: '.82rem', textAlign: 'center', marginTop: '1rem' }}>
         ¿Ya eres alumno y vienes a pagar? <Link href="/pago">Entra con tu folio</Link>.

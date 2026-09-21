@@ -75,6 +75,24 @@ export async function darDeAltaSolicitud(_previo: Resultado, datos: FormData): P
       cicloAnualId: ciclo.id,
       sesionIds: sesiones.map((s) => s.id),
       ...(locker ? { locker } : {}),
+      // Lo que ya llenó al registrarse no se le vuelve a pedir en la
+      // ventanilla: sus datos fiscales y su constancia viajan con él.
+      ...(solicitud.factura && solicitud.rfc
+        ? {
+            factura: {
+              rfc: solicitud.rfc,
+              razonSocial: solicitud.razonSocial ?? '',
+              codigoPostal: solicitud.codigoPostal ?? '',
+              regimenFiscal: solicitud.regimenFiscal ?? '',
+              usoCfdi: solicitud.usoCfdi ?? '',
+              correo: solicitud.correoFactura,
+              constanciaPdf: solicitud.constanciaPdf
+                ? new Uint8Array(solicitud.constanciaPdf)
+                : null,
+              constanciaNombre: solicitud.constanciaNombre,
+            },
+          }
+        : {}),
     })
 
     await prisma.solicitudDeRegistro.update({

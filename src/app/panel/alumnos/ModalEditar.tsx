@@ -3,6 +3,7 @@
 import { useActionState, useCallback, useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { obtenerAlumno, editarAlumno } from './acciones'
+import SelectorCursoHorario, { type GrupoHorario } from './SelectorCursoHorario'
 import Alerta from '@/components/Alerta'
 import Selector from '@/components/Selector'
 import CampoFecha from '@/components/CampoFecha'
@@ -31,11 +32,13 @@ export default function ModalEditar({
   id,
   descuentos,
   grupos,
+  lockers,
 }: {
   id: string
   descuentos: Array<{ hash: string; nombre: string }>
-  /** Los cursos y horarios abiertos, para poder moverlo de grupo. */
-  grupos: Array<{ clave: string; cursoNombre: string; horario: string; dias: string }>
+  /** Los mismos que ofrece el alta, para poder moverlo de grupo. */
+  grupos: GrupoHorario[]
+  lockers: Array<{ id: string; numero: number }>
 }) {
   const [abierto, setAbierto] = useState(false)
 
@@ -107,6 +110,7 @@ export default function ModalEditar({
                   datos={busca.datos}
                   descuentos={descuentos}
                   grupos={grupos}
+                  lockers={lockers}
                   cerrar={() => setAbierto(false)}
                 />
               )}
@@ -123,12 +127,14 @@ function Formulario({
   datos,
   descuentos,
   grupos,
+  lockers,
   cerrar,
 }: {
   id: string
   datos: Datos
   descuentos: Array<{ hash: string; nombre: string }>
-  grupos: Array<{ clave: string; cursoNombre: string; horario: string; dias: string }>
+  grupos: GrupoHorario[]
+  lockers: Array<{ id: string; numero: number }>
   cerrar: () => void
 }) {
   const [aviso, accion, enviando] = useActionState(editarAlumno, null)
@@ -171,22 +177,32 @@ function Formulario({
 
         {datos.puedeMoverGrupo && (
           <>
-            <label htmlFor={`grupo-${id}`} style={{ marginTop: '.8rem', display: 'block' }}>
-              Curso y horario
+            <SelectorCursoHorario
+              grupos={grupos}
+              deshabilitado={enviando}
+              claveInicial={datos.grupo}
+            />
+
+            <label style={{ marginTop: '.8rem', display: 'block' }}>
+              Locker{' '}
+              <span className="silencio" style={{ fontWeight: 400 }}>
+                {lockers.length === 0 ? '(ninguno libre)' : `(${lockers.length} libres)`}
+              </span>
             </label>
-            <select
-              id={`grupo-${id}`} name="grupo" defaultValue={datos.grupo} disabled={enviando}
-            >
-              {datos.grupo === '' && <option value="">Sin curso</option>}
-              {grupos.map((g) => (
-                <option key={g.clave} value={g.clave}>
-                  {g.cursoNombre} · {g.horario} · {g.dias}
-                </option>
-              ))}
-            </select>
+            <Selector
+              nombre="locker"
+              etiqueta="Locker"
+              placeholder="Sin locker"
+              valor={datos.locker}
+              deshabilitado={enviando}
+              opciones={[
+                { valor: '', etiqueta: 'Sin locker' },
+                ...lockers.map((l) => ({ valor: l.id, etiqueta: `Locker ${l.numero}` })),
+              ]}
+            />
             <p className="silencio" style={{ fontSize: '.8rem', marginTop: '.3rem' }}>
-              Cambiarlo rehace los meses que todavía debe, con el precio del curso nuevo.
-              Lo que ya pagó se queda como está.
+              Cambiar el curso rehace los meses que todavía debe, con el precio nuevo. Lo
+              que ya pagó se queda como está.
             </p>
           </>
         )}

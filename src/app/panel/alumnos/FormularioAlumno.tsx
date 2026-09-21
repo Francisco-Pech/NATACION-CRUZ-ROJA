@@ -2,6 +2,7 @@
 
 import { useActionState, useEffect, useState } from 'react'
 import { darDeAltaAlumno } from './acciones'
+import type { Resultado } from '../admin/catalogo/tipos'
 import SelectorCursoHorario, { type GrupoHorario } from './SelectorCursoHorario'
 import CampoFecha from '@/components/CampoFecha'
 import Selector from '@/components/Selector'
@@ -24,21 +25,34 @@ const VACIO = {
  * Los datos de facturación solo aparecen si se marca que factura: a la
  * mayoría no le hacen falta y tenerlos siempre a la vista alarga la
  * pantalla sin razón.
+ *
+ * Es el mismo formulario que usa la inscripción abierta, con otra acción y
+ * sin descuento. Tener dos formularios para lo mismo termina en dos
+ * formularios distintos: uno se arregla y el otro se queda atrás.
  */
 export default function FormularioAlumno({
   grupos,
   descuentos,
   lockers,
   precioLocker,
+  accionPropia,
+  textoBoton,
+  notaLocker,
 }: {
   grupos: GrupoHorario[]
+  /** Vacío esconde el campo: la inscripción abierta no da descuentos. */
   descuentos: Array<{ hash: string; nombre: string }>
   /** Solo los que están libres este mes. */
   lockers: Array<{ id: string; numero: number }>
   /** Lo que cuesta al mes, ya escrito. */
   precioLocker: string
+  /** Con qué se guarda. Por omisión, el alta del panel. */
+  accionPropia?: (previo: Resultado, datos: FormData) => Promise<Resultado>
+  textoBoton?: string
+  /** Una nota bajo el locker. La usa la inscripción abierta, que no aparta. */
+  notaLocker?: string
 }) {
-  const [aviso, accion, enviando] = useActionState(darDeAltaAlumno, null)
+  const [aviso, accion, enviando] = useActionState(accionPropia ?? darDeAltaAlumno, null)
   const [factura, setFactura] = useState(false)
 
   /**
@@ -88,22 +102,24 @@ export default function FormularioAlumno({
             />
           </div>
 
-          <div style={{ flex: '1 1 180px' }}>
-            <label>Descuento</label>
-            <Selector
-              key={ronda}
-              nombre="descuento"
-              etiqueta="Descuento"
-              placeholder="Sin descuento"
-              valor=""
-              deshabilitado={enviando}
-              alCambiar={setDescuentoElegido}
-              opciones={[
-                { valor: '', etiqueta: 'Sin descuento' },
-                ...descuentos.map((d) => ({ valor: d.hash, etiqueta: d.nombre })),
-              ]}
-            />
-          </div>
+          {descuentos.length > 0 && (
+            <div style={{ flex: '1 1 180px' }}>
+              <label>Descuento</label>
+              <Selector
+                key={ronda}
+                nombre="descuento"
+                etiqueta="Descuento"
+                placeholder="Sin descuento"
+                valor=""
+                deshabilitado={enviando}
+                alCambiar={setDescuentoElegido}
+                opciones={[
+                  { valor: '', etiqueta: 'Sin descuento' },
+                  ...descuentos.map((d) => ({ valor: d.hash, etiqueta: d.nombre })),
+                ]}
+              />
+            </div>
+          )}
 
           {/* Junto al descuento: los dos son opcionales, chicos, y se
               deciden en el mostrador mientras el alumno está ahí. */}
@@ -131,6 +147,11 @@ export default function FormularioAlumno({
                 ...lockers.map((l) => ({ valor: l.id, etiqueta: `Locker ${l.numero}` })),
               ]}
             />
+            {notaLocker && (
+              <p className="silencio" style={{ fontSize: '.8rem', margin: '.3rem 0 0' }}>
+                {notaLocker}
+              </p>
+            )}
           </div>
         </div>
 
@@ -264,7 +285,7 @@ export default function FormularioAlumno({
         <div className="fila" style={{ justifyContent: 'flex-end', marginTop: '1rem' }}>
           <button className="boton con-icono" type="submit" disabled={enviando}>
             {enviando ? <span className="girando claro" /> : <IconoGuardar />}
-            {enviando ? 'Dando de alta…' : 'Dar de alta'}
+            {enviando ? 'Enviando…' : (textoBoton ?? 'Dar de alta')}
           </button>
         </div>
       </form>

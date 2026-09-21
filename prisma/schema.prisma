@@ -700,7 +700,16 @@ model SolicitudDeRegistro {
   horarioId      String
   /// Vacío: no quiere locker. No todos lo usan y se cobra aparte cada mes.
   lockerId       String?
-  telefono       String?
+  /// Lo mismo que se captura en el mostrador: si pide factura, con qué datos.
+  factura          Boolean @default(false)
+  rfc              String?
+  razonSocial      String?
+  codigoPostal     String?
+  regimenFiscal    String?
+  usoCfdi          String?
+  correoFactura    String?
+  constanciaPdf    Bytes?
+  constanciaNombre String?
   atendidaEn     DateTime?
   atendidaPorId  String?
   inscripcionId  String?

@@ -8,6 +8,7 @@ import ModalCredencial from './ModalCredencial'
 import ModalMesEnCurso from './ModalMesEnCurso'
 import ModalFactura from './ModalFactura'
 import ModalEditar from './ModalEditar'
+import type { GrupoHorario } from './SelectorCursoHorario'
 
 export type RenglonAlumno = {
   id: string
@@ -46,12 +47,14 @@ export default function TablaAlumnos({
   renglones,
   descuentos,
   grupos,
+  lockers,
 }: {
   renglones: RenglonAlumno[]
   /** Para la ventana de editar: el mismo catálogo que ofrece el alta. */
   descuentos: Array<{ hash: string; nombre: string }>
-  /** Los cursos y horarios abiertos, para que Root pueda mover de grupo. */
-  grupos: Array<{ clave: string; cursoNombre: string; horario: string; dias: string }>
+  /** Los mismos que ofrece el alta, para que Root pueda mover de grupo. */
+  grupos: GrupoHorario[]
+  lockers: Array<{ id: string; numero: number }>
 }) {
   const [busqueda, setBusqueda] = useState('')
   const [puestos, setPuestos] = useState<Record<string, string>>({})
@@ -232,7 +235,7 @@ export default function TablaAlumnos({
                   {/* Se edita sobre la lista: quien corrige un nombre mal
                       escrito no debería perder la página, los filtros y el
                       renglón en el que iba. */}
-                  <ModalEditar id={r.id} descuentos={descuentos} grupos={grupos} />
+                  <ModalEditar id={r.id} descuentos={descuentos} grupos={grupos} lockers={lockers} />
                 </td>
               </tr>
             ))}

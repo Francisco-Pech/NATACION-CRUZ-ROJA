@@ -15,6 +15,7 @@ import { nombreDeAlumno } from '@/lib/formato'
 import { validarVigencia } from '@/lib/descuentos'
 import { armarCredencial } from '@/lib/credencial'
 import { periodoActual } from '@/lib/periodo-actual'
+import { asignarLocker, liberarLocker } from '@/lib/servicios/lockers'
 import type { Resultado } from '../admin/catalogo/tipos'
 
 const texto = (datos: FormData, campo: string) => String(datos.get(campo) ?? '').trim()
@@ -221,10 +222,21 @@ export async function obtenerAlumno(inscripcionId: string) {
   const suya = inscripcion.sesiones[0]?.sesion
   const grupo = suya ? `${suya.tipoCurso.hash}|${suya.horario.hash}` : ''
 
+  // El locker del mes que corre: es el único que se puede mover desde
+  // aquí, porque los pasados ya se cobraron.
+  const actual = await periodoActual()
+  const asignado = actual
+    ? await prisma.asignacionLocker.findFirst({
+        where: { inscripcionId, periodoId: actual.periodo.id },
+        select: { lockerId: true },
+      })
+    : null
+
   return {
     folio: inscripcion.folio,
     nombreCompleto: a.nombreCompleto,
     grupo,
+    locker: asignado?.lockerId ?? '',
     /**
      * Mover el curso a media temporada rehace los meses que se deben, con
      * el precio del curso nuevo. Eso lo decide quien manda en la escuela,
@@ -256,6 +268,39 @@ export async function obtenerAlumno(inscripcionId: string) {
  * El folio no se toca nunca. Se imprime, se dicta por teléfono y es como se
  * nombra la inscripción en papel.
  */
+/**
+ * Le cambia el locker a un alumno ya inscrito, para el mes en curso.
+ *
+ * Vacío quiere decir que se queda sin locker. Solo se toca el mes que
+ * corre: los meses pasados ya se cobraron con lo que tuvieran.
+ *
+ * Devuelve un aviso cuando no se pudo —el locker ya lo tomaron, está
+ * apartado para un profesor— y nada cuando quedó.
+ */
+async function moverLocker(inscripcionId: string, idLocker: string): Promise<Resultado | null> {
+  const actual = await periodoActual()
+  if (!actual) return null
+
+  const tiene = await prisma.asignacionLocker.findFirst({
+    where: { inscripcionId, periodoId: actual.periodo.id },
+  })
+  if ((tiene?.lockerId ?? '') === idLocker) return null
+
+  if (tiene) await liberarLocker(tiene.id)
+  if (!idLocker) return null
+
+  const fila = await prisma.locker.findUnique({
+    where: { id: idLocker },
+    include: { deProfesor: true, asignaciones: { where: { periodoId: actual.periodo.id } } },
+  })
+  if (!fila || !fila.activo) return no('Ese locker ya no está disponible.')
+  if (fila.deProfesor) return no(`El locker ${fila.numero} está apartado para un profesor.`)
+  if (fila.asignaciones.length > 0) return no(`El locker ${fila.numero} ya lo tomaron.`)
+
+  await asignarLocker(fila.id, inscripcionId, actual.periodo.id)
+  return null
+}
+
 export async function editarAlumno(_previo: Resultado, datos: FormData): Promise<Resultado> {
   try {
     const usuario = await requierePermiso('ALUMNOS')
@@ -369,20 +414,20 @@ export async function editarAlumno(_previo: Resultado, datos: FormData): Promise
      * alguien de curso cambia lo que paga.
      */
     let cambioDeGrupo = ''
-    const grupo = texto(datos, 'grupo')
-    if (grupo && esAdministrativo(usuario)) {
-      const [cursoHash = '', horarioHash = ''] = grupo.split('|')
-      const sesiones = await prisma.sesion.findMany({
-        where: {
-          activo: true,
-          tipoCurso: { hash: cursoHash, activo: true },
-          horario: { hash: horarioHash },
-        },
-        select: { id: true },
-      })
-      if (sesiones.length === 0) return no('Ese curso ya no se da a esa hora.')
-      await cambiarSesiones(inscripcion.id, sesiones.map((s) => s.id))
-      cambioDeGrupo = ' Se le rehicieron los meses que debe con el curso nuevo.'
+    if (esAdministrativo(usuario)) {
+      const sesionHashes = datos.getAll('sesiones').map(String).filter(Boolean)
+      if (sesionHashes.length > 0) {
+        const sesiones = await prisma.sesion.findMany({
+          where: { hash: { in: sesionHashes }, activo: true, tipoCurso: { activo: true } },
+          select: { id: true },
+        })
+        if (sesiones.length !== sesionHashes.length) return no('Ese curso ya no está abierto.')
+        await cambiarSesiones(inscripcion.id, sesiones.map((s) => s.id))
+        cambioDeGrupo = ' Se le rehicieron los meses que debe con el curso nuevo.'
+      }
+
+      const cambio = await moverLocker(inscripcion.id, texto(datos, 'locker'))
+      if (cambio) return cambio
     }
 
     // Lo que debe se vuelve a armar con lo que acaba de quedar: su curso y

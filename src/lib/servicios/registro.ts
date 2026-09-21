@@ -2,18 +2,7 @@ import { prisma } from '@/lib/db'
 import { hoyEnCancun } from '@/lib/zona'
 import { DIAS_SEMANA } from '@/lib/dias-semana'
 
-/** Un curso a una hora, con todos sus días juntos. */
-export type GrupoAbierto = {
-  /** Lo que viaja en el formulario. No es ningún id de la base. */
-  clave: string
-  cursoHash: string
-  cursoNombre: string
-  horarioHash: string
-  /** "08:00–09:00". */
-  horario: string
-  /** "Lun, Mié, Vie". */
-  dias: string
-}
+import type { GrupoHorario } from '@/app/panel/alumnos/SelectorCursoHorario'
 
 /**
  * Los grupos a los que alguien se puede apuntar este año.
@@ -22,7 +11,7 @@ export type GrupoAbierto = {
  * incumbe a un desconocido: ni cuántos van, ni los renglones de la rejilla.
  * Aquí entra gente sin contraseña, y lo que no se enseña no se filtra.
  */
-export async function gruposAbiertos(): Promise<GrupoAbierto[]> {
+export async function gruposAbiertos(): Promise<GrupoHorario[]> {
   const anio = Number(hoyEnCancun().slice(0, 4))
 
   const sesiones = await prisma.sesion.findMany({
@@ -42,7 +31,7 @@ export async function gruposAbiertos(): Promise<GrupoAbierto[]> {
     ],
   })
 
-  const porGrupo = new Map<string, GrupoAbierto & { diasN: number[] }>()
+  const porGrupo = new Map<string, GrupoHorario & { diasN: number[] }>()
   for (const s of sesiones) {
     const clave = `${s.tipoCurso.hash}|${s.horario.hash}`
     const grupo = porGrupo.get(clave) ?? {
@@ -52,9 +41,14 @@ export async function gruposAbiertos(): Promise<GrupoAbierto[]> {
       horarioHash: s.horario.hash,
       horario: `${s.horario.horaInicio}–${s.horario.horaFin}`,
       dias: '',
+      // Cuántos van no se enseña aquí: es de la casa, no de quien se
+      // inscribe. El componente lo pinta solo si viene con número.
+      inscritos: 0,
+      sesiones: [],
       diasN: [],
     }
     grupo.diasN.push(s.diaSemana)
+    grupo.sesiones.push(s.hash)
     porGrupo.set(clave, grupo)
   }
 
@@ -74,7 +68,7 @@ export async function gruposAbiertos(): Promise<GrupoAbierto[]> {
  * aparta: quien lo pida en su solicitud puede encontrarlo tomado cuando le
  * den de alta, y entonces se le asigna otro en la ventanilla.
  */
-export async function lockersLibres(): Promise<Array<{ hash: string; numero: number }>> {
+export async function lockersLibres(): Promise<Array<{ id: string; numero: number }>> {
   const hoy = hoyEnCancun()
   const periodo = await prisma.periodo.findUnique({ where: { clave: hoy.slice(0, 7) } })
   if (!periodo) return []
@@ -89,7 +83,5 @@ export async function lockersLibres(): Promise<Array<{ hash: string; numero: num
     select: { id: true, numero: true },
   })
 
-  // El id de la base no sale a ninguna pantalla: viaja el número, que es
-  // lo que de verdad identifica al locker para quien lo pide.
-  return lockers.map((l) => ({ hash: String(l.numero), numero: l.numero }))
+  return lockers
 }

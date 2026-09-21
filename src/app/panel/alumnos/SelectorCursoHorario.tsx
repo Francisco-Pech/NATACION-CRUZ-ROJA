@@ -34,12 +34,19 @@ export type GrupoHorario = {
 export default function SelectorCursoHorario({
   grupos,
   deshabilitado = false,
+  claveInicial = '',
 }: {
   grupos: GrupoHorario[]
   deshabilitado?: boolean
+  /**
+   * Con qué grupo arranca. Al editar a alguien ya inscrito se abre en el
+   * suyo: en blanco parecería que no lleva curso.
+   */
+  claveInicial?: string
 }) {
-  const [curso, setCurso] = useState('')
-  const [clave, setClave] = useState('')
+  const inicial = grupos.find((g) => g.clave === claveInicial) ?? null
+  const [curso, setCurso] = useState(inicial?.cursoHash ?? '')
+  const [clave, setClave] = useState(inicial?.clave ?? '')
 
   const cursos = useMemo(
     () =>
@@ -70,7 +77,7 @@ export default function SelectorCursoHorario({
           nombre="curso-visible"
           etiqueta="Tipo de curso"
           placeholder="Escoge el curso…"
-          valor=""
+          valor={curso}
           requerido
           deshabilitado={deshabilitado || cursos.length === 0}
           alCambiar={(v) => {
@@ -91,7 +98,7 @@ export default function SelectorCursoHorario({
           nombre="horario-visible"
           etiqueta="Horario"
           placeholder={curso ? 'Escoge el horario…' : 'Primero el curso'}
-          valor=""
+          valor={clave}
           requerido
           deshabilitado={deshabilitado || !curso}
           alCambiar={setClave}

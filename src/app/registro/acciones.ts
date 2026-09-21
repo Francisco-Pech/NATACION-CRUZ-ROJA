@@ -1,76 +1,116 @@
 'use server'
 
-import { redirect } from 'next/navigation'
 import { prisma } from '@/lib/db'
 import { nuevoHash } from '@/lib/ids'
 import { nombreDeAlumno } from '@/lib/formato'
+import { LARGO_NOMBRE } from '@/lib/validaciones'
+import { validarDatosFactura, normalizarRfc, USO_CFDI, validarConstancia } from '@/lib/facturacion'
+import type { Resultado } from '../panel/admin/catalogo/tipos'
 
 const texto = (datos: FormData, campo: string) => String(datos.get(campo) ?? '').trim()
-
-const volver = (recado: string) => redirect(`/registro?mal=${encodeURIComponent(recado)}`)
-
-/** Nombre y apellido: un solo nombre suelto no identifica a nadie en una lista. */
-const LARGO_NOMBRE = { min: 5, max: 120 }
+const no = (mensaje: string): Resultado => ({ ok: false, mensaje })
 
 /**
  * Guarda la solicitud de quien quiere inscribirse.
  *
- * No crea alumno, ni folio, ni cargos: crea una solicitud que alguien de la
- * delegación tiene que dar de alta. Este formulario no pide contraseña, así
- * que lo llena cualquiera, y un alumno inventado con folio podría pagar,
- * pasar lista y sacar credencial.
+ * Es el mismo formulario del mostrador, sin descuento, y hace lo mismo
+ * salvo lo único que importa: no crea alumno, ni folio, ni cargos. Crea
+ * una solicitud que alguien de la delegación tiene que dar de alta.
  *
- * Nada de lo que llega se cree: el curso, el horario y el locker se buscan
- * en la base por su clave pública, y lo que no exista o no esté abierto se
- * rechaza. Un formulario alterado no puede apuntar a un curso apagado.
+ * Aquí entra gente sin contraseña, así que nada de lo que llega se cree:
+ * el curso, el horario y el locker se buscan en la base por su clave
+ * pública, y lo que no exista o esté cerrado se rechaza.
  */
-export async function pedirRegistro(datos: FormData) {
-  const nombreCompleto = nombreDeAlumno(texto(datos, 'nombreCompleto'))
-  if (nombreCompleto.length < LARGO_NOMBRE.min) {
-    volver('Escribe el nombre completo del alumno, con apellidos.')
+export async function pedirRegistro(_previo: Resultado, datos: FormData): Promise<Resultado> {
+  try {
+    const nombreCompleto = nombreDeAlumno(texto(datos, 'nombreCompleto'))
+    if (nombreCompleto.length < LARGO_NOMBRE.min) {
+      return no('Escribe el nombre completo del alumno, con apellidos.')
+    }
+    if (nombreCompleto.length > LARGO_NOMBRE.max) return no('Ese nombre es demasiado largo.')
+
+    // ---- el curso y el horario ----
+    const sesionHashes = datos.getAll('sesiones').map(String).filter(Boolean)
+    if (sesionHashes.length === 0) return no('Escoge el curso y el horario.')
+
+    const sesiones = await prisma.sesion.findMany({
+      where: { hash: { in: sesionHashes }, activo: true, tipoCurso: { activo: true } },
+      include: { tipoCurso: true, horario: true },
+    })
+    if (sesiones.length !== sesionHashes.length) {
+      return no('Ese curso ya no está abierto. Vuelve a escoger.')
+    }
+
+    // ---- el locker, si pidió uno ----
+    //
+    // Se apunta cuál quiere, pero no se aparta: entre hoy y el día que lo
+    // den de alta pueden pasar semanas, y dejar un locker congelado por una
+    // solicitud que quizá nunca se atienda se lo quita a quien sí vino.
+    const idLocker = texto(datos, 'locker')
+    const locker = idLocker
+      ? await prisma.locker.findFirst({
+          where: { id: idLocker, activo: true, deProfesor: null },
+          select: { id: true },
+        })
+      : null
+    if (idLocker && !locker) return no('Ese locker ya no está disponible. Escoge otro.')
+
+    // ---- la facturación ----
+    const quiereFactura = datos.get('factura') === 'on'
+    let factura: Record<string, string | null> = {}
+    let constancia: { pdf: Uint8Array<ArrayBuffer>; nombre: string } | null = null
+
+    if (quiereFactura) {
+      const problema = validarDatosFactura({
+        rfc: texto(datos, 'rfc'),
+        razonSocial: texto(datos, 'razonSocial'),
+        codigoPostal: texto(datos, 'codigoPostal'),
+        regimenFiscal: texto(datos, 'regimenFiscal'),
+        usoCfdi: USO_CFDI.clave,
+      })
+      if (problema) return no(problema)
+
+      const archivo = datos.get('constancia')
+      if (archivo instanceof File && archivo.size > 0) {
+        const malArchivo = validarConstancia({ tipo: archivo.type, tamano: archivo.size })
+        if (malArchivo) return no(malArchivo)
+        constancia = {
+          pdf: new Uint8Array(await archivo.arrayBuffer()),
+          nombre: archivo.name.slice(0, 120),
+        }
+      }
+
+      factura = {
+        rfc: normalizarRfc(texto(datos, 'rfc')),
+        razonSocial: texto(datos, 'razonSocial'),
+        codigoPostal: texto(datos, 'codigoPostal'),
+        regimenFiscal: texto(datos, 'regimenFiscal'),
+        usoCfdi: USO_CFDI.clave,
+        correoFactura: texto(datos, 'correoFactura') || null,
+      }
+    }
+
+    await prisma.solicitudDeRegistro.create({
+      data: {
+        hash: nuevoHash(),
+        nombreCompleto,
+        tipoCursoId: sesiones[0].tipoCursoId,
+        horarioId: sesiones[0].horarioId,
+        lockerId: locker?.id ?? null,
+        factura: quiereFactura,
+        ...factura,
+        constanciaPdf: constancia?.pdf ?? null,
+        constanciaNombre: constancia?.nombre ?? null,
+      },
+    })
+
+    return {
+      ok: true,
+      mensaje:
+        'Recibimos tu solicitud. Pasa a la delegación a confirmar tu inscripción: ahí te' +
+        ' entregan tu folio y tu credencial. Todavía no se te ha cobrado nada.',
+    }
+  } catch (e) {
+    return no(e instanceof Error ? e.message : 'No se pudo enviar la solicitud.')
   }
-  if (nombreCompleto.length > LARGO_NOMBRE.max) {
-    volver('Ese nombre es demasiado largo.')
-  }
-
-  // El grupo viaja como "cursoHash|horarioHash", que es como se arma en la
-  // pantalla. Los dos se comprueban aparte contra la base.
-  const [cursoHash = '', horarioHash = ''] = texto(datos, 'grupo').split('|')
-
-  const curso = cursoHash
-    ? await prisma.tipoCurso.findFirst({ where: { hash: cursoHash, activo: true } })
-    : null
-  const horario = horarioHash
-    ? await prisma.horario.findFirst({ where: { hash: horarioHash, activo: true } })
-    : null
-  if (!curso || !horario) volver('Escoge el curso y el horario.')
-
-  // Y que ese curso de verdad corra a esa hora: dos claves válidas sueltas
-  // no hacen un grupo que exista.
-  const existeElGrupo = await prisma.sesion.findFirst({
-    where: { activo: true, tipoCursoId: curso!.id, horarioId: horario!.id },
-    select: { id: true },
-  })
-  if (!existeElGrupo) volver('Ese curso no se da a esa hora. Escoge otro horario.')
-
-  // El locker es opcional: no todos lo usan y se cobra aparte cada mes.
-  const numeroLocker = Number(texto(datos, 'locker'))
-  const locker = Number.isInteger(numeroLocker) && numeroLocker > 0
-    ? await prisma.locker.findFirst({ where: { numero: numeroLocker, activo: true } })
-    : null
-
-  const telefono = texto(datos, 'telefono').slice(0, 20) || null
-
-  await prisma.solicitudDeRegistro.create({
-    data: {
-      hash: nuevoHash(),
-      nombreCompleto,
-      tipoCursoId: curso!.id,
-      horarioId: horario!.id,
-      lockerId: locker?.id ?? null,
-      telefono,
-    },
-  })
-
-  redirect('/registro?listo=1')
 }

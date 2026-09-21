@@ -142,7 +142,6 @@ export default async function Alumnos({
         .map((n) => DIAS_SEMANA.find((d) => d.n === n)?.corto ?? '?')
         .join(', '),
       locker: s.locker?.numero ?? null,
-      telefono: s.telefono,
       cuando: fechaLarga(s.creadoEn),
       yaExiste: yaInscritos.has(s.nombreCompleto),
     }))
@@ -333,6 +332,7 @@ export default async function Alumnos({
 
       <TablaAlumnos
         grupos={grupos}
+        lockers={lockersLibres}
         descuentos={descuentos.map((d) => ({ hash: d.hash, nombre: conValor(d) }))}
         renglones={inscripciones.map((i) => {
           // Quien lleva dos cursos debe dos cargos este mes: el semáforo

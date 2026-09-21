@@ -11,7 +11,6 @@ export type Solicitud = {
   horario: string
   dias: string
   locker: number | null
-  telefono: string | null
   /** Cuándo llegó, ya escrito: "18 de septiembre". */
   cuando: string
   /** Si ya hay un alumno inscrito con ese mismo nombre. */
@@ -76,9 +75,6 @@ function FilaSolicitud({ solicitud }: { solicitud: Solicitud }) {
       <tr>
         <td>
           <strong>{solicitud.nombreCompleto}</strong>
-          {solicitud.telefono && (
-            <div className="silencio" style={{ fontSize: '.82rem' }}>{solicitud.telefono}</div>
-          )}
           {solicitud.yaExiste && (
             <div style={{ fontSize: '.8rem', color: '#b45309' }}>
               Ya hay un alumno con este nombre
