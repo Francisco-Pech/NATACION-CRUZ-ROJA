@@ -2,6 +2,7 @@
 
 import { useActionState } from 'react'
 import { darDeAltaSolicitud, descartarSolicitud } from './solicitudes-acciones'
+import BotonConfirmar from '@/components/BotonConfirmar'
 import type { Resultado } from '../admin/catalogo/tipos'
 
 export type Solicitud = {
@@ -95,17 +96,47 @@ function FilaSolicitud({ solicitud }: { solicitud: Solicitud }) {
         <td className="silencio" style={{ fontSize: '.85rem' }}>{solicitud.cuando}</td>
         <td>
           <div className="fila" style={{ justifyContent: 'flex-end', gap: '.4rem' }}>
+            {/* Las dos preguntan antes: una crea un alumno con su folio y
+                le manda un correo, la otra deja fuera a alguien que se
+                registró. Ninguna se deshace desde aquí. */}
             <form action={darDeAlta}>
               <input type="hidden" name="hash" value={solicitud.hash} />
-              <button className="boton" type="submit" disabled={trabajando}>
+              <BotonConfirmar
+                className="boton"
+                deshabilitado={trabajando}
+                titulo={`¿Dar de alta a ${solicitud.nombreCompleto}?`}
+                confirmar="Sí, darlo de alta"
+                detalle={
+                  <>
+                    Queda inscrito en <strong>{solicitud.curso}</strong> de{' '}
+                    {solicitud.horario} ({solicitud.dias}), con su folio y sus meses por
+                    cobrar.
+                    {solicitud.locker && <> Se le aparta el locker {solicitud.locker}.</>}
+                    {solicitud.correo
+                      ? <> Se le avisa a <strong>{solicitud.correo}</strong>.</>
+                      : <> No dejó correo: tendrás que dictarle su folio.</>}
+                  </>
+                }
+              >
                 {dando ? 'Dando de alta…' : 'Dar de alta'}
-              </button>
+              </BotonConfirmar>
             </form>
             <form action={descartar}>
               <input type="hidden" name="hash" value={solicitud.hash} />
-              <button className="boton tenue" type="submit" disabled={trabajando}>
+              <BotonConfirmar
+                className="boton tenue"
+                deshabilitado={trabajando}
+                titulo={`¿Descartar la solicitud de ${solicitud.nombreCompleto}?`}
+                confirmar="Sí, descartarla"
+                detalle={
+                  <>
+                    No se crea ningún alumno y la solicitud sale de esta lista. No se le
+                    avisa nada a quien la mandó.
+                  </>
+                }
+              >
                 {descartando ? 'Espera…' : 'Descartar'}
-              </button>
+              </BotonConfirmar>
             </form>
           </div>
         </td>

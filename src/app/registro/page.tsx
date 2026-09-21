@@ -65,6 +65,13 @@ export default async function Registro() {
             textoBoton="Enviar mi solicitud"
             esperarCompleto
             pedirCorreo
+            alQuedar={{
+              titulo: 'Solicitud enviada',
+              botones: [
+                { texto: 'Registrar a alguien más', href: '/registro' },
+                { texto: 'Buscar mi folio', href: '/pago' },
+              ],
+            }}
             notaLocker="El locker que escojas no queda apartado: se revisa cuando la delegación acepte tu solicitud, y si para entonces ya lo tomaron se te asigna otro."
           />
         )}

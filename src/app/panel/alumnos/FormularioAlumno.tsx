@@ -41,6 +41,7 @@ export default function FormularioAlumno({
   notaLocker,
   esperarCompleto = false,
   pedirCorreo = false,
+  alQuedar,
 }: {
   grupos: GrupoHorario[]
   /** Vacío esconde el campo: la inscripción abierta no da descuentos. */
@@ -65,6 +66,15 @@ export default function FormularioAlumno({
    * que lo aceptaron, porque no va a pasar a preguntar.
    */
   pedirCorreo?: boolean
+  /**
+   * Qué enseñar cuando queda guardado, en lugar del formulario.
+   *
+   * En el mostrador no se usa: ahí se da de alta a uno tras otro y el
+   * formulario tiene que quedar listo para el siguiente. En la
+   * inscripción abierta es al revés: se manda una vez, y dejar el
+   * formulario en blanco con un aviso arriba hace dudar de si se envió.
+   */
+  alQuedar?: { titulo: string; botones: Array<{ texto: string; href: string }> }
   /** Una nota bajo el locker. La usa la inscripción abierta, que no aparta. */
   notaLocker?: string
 }) {
@@ -110,14 +120,32 @@ export default function FormularioAlumno({
         datos.codigoPostal.trim() === '' ||
         regimenPuesto === ''))
   useEffect(() => {
-    if (!aviso?.ok) return
+    if (!aviso?.ok || alQuedar) return
     setDatos(VACIO)
     setFactura(false)
     setDescuentoElegido('')
     setGrupoPuesto('')
     setRegimenPuesto('')
     setRonda((n) => n + 1)
-  }, [aviso])
+  }, [aviso, alQuedar])
+
+  // Quedó guardado y hay a dónde ir: el formulario se retira y deja la
+  // confirmación sola en la pantalla.
+  if (alQuedar && aviso?.ok) {
+    return (
+      <div style={{ textAlign: 'center' }}>
+        <h2 style={{ marginTop: 0 }}>{alQuedar.titulo}</h2>
+        <p>{aviso.mensaje}</p>
+        <div className="fila" style={{ justifyContent: 'center', marginTop: '1rem' }}>
+          {alQuedar.botones.map((b, i) => (
+            <a key={b.href} className={i === 0 ? 'boton' : 'boton tenue'} href={b.href}>
+              {b.texto}
+            </a>
+          ))}
+        </div>
+      </div>
+    )
+  }
 
   return (
     <>
