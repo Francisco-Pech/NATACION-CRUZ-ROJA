@@ -38,6 +38,7 @@ export default function FormularioAlumno({
   accionPropia,
   textoBoton,
   notaLocker,
+  esperarCompleto = false,
 }: {
   grupos: GrupoHorario[]
   /** Vacío esconde el campo: la inscripción abierta no da descuentos. */
@@ -49,6 +50,14 @@ export default function FormularioAlumno({
   /** Con qué se guarda. Por omisión, el alta del panel. */
   accionPropia?: (previo: Resultado, datos: FormData) => Promise<Resultado>
   textoBoton?: string
+  /**
+   * Apaga el botón hasta que esté lo obligatorio.
+   *
+   * En el mostrador no hace falta —quien captura ya sabe qué se pide y el
+   * navegador lo frena igual—, pero en la inscripción abierta un botón que
+   * se puede apretar a medias parece que funcionó y no funcionó.
+   */
+  esperarCompleto?: boolean
   /** Una nota bajo el locker. La usa la inscripción abierta, que no aparta. */
   notaLocker?: string
 }) {
@@ -80,11 +89,25 @@ export default function FormularioAlumno({
    * días serían dos huecos que nadie llena.
    */
   const [descuentoElegido, setDescuentoElegido] = useState('')
+  /** Qué grupo lleva puesto y, si factura, su régimen: para saber si ya está. */
+  const [grupoPuesto, setGrupoPuesto] = useState('')
+  const [regimenPuesto, setRegimenPuesto] = useState('')
+
+  const faltaAlgo =
+    datos.nombreCompleto.trim() === '' ||
+    grupoPuesto === '' ||
+    (factura &&
+      (datos.rfc.trim() === '' ||
+        datos.razonSocial.trim() === '' ||
+        datos.codigoPostal.trim() === '' ||
+        regimenPuesto === ''))
   useEffect(() => {
     if (!aviso?.ok) return
     setDatos(VACIO)
     setFactura(false)
     setDescuentoElegido('')
+    setGrupoPuesto('')
+    setRegimenPuesto('')
     setRonda((n) => n + 1)
   }, [aviso])
 
@@ -185,7 +208,9 @@ export default function FormularioAlumno({
           </div>
         )}
 
-        <SelectorCursoHorario key={ronda} grupos={grupos} deshabilitado={enviando} />
+        <SelectorCursoHorario
+          key={ronda} grupos={grupos} deshabilitado={enviando} alEscoger={setGrupoPuesto}
+        />
 
         <label className="casilla-suelta">
           <input
@@ -231,9 +256,10 @@ export default function FormularioAlumno({
                   nombre="regimenFiscal"
                   etiqueta="Régimen fiscal"
                   placeholder="Escoge…"
-                  valor=""
+                  valor={regimenPuesto}
                   requerido
                   deshabilitado={enviando}
+                  alCambiar={setRegimenPuesto}
                   opciones={[
                     { valor: '', etiqueta: 'Escoge…' },
                     ...REGIMENES_FISCALES.map((r) => ({
@@ -283,8 +309,19 @@ export default function FormularioAlumno({
           </div>
         )}
 
-        <div className="fila" style={{ justifyContent: 'flex-end', marginTop: '1rem' }}>
-          <button className="boton con-icono" type="submit" disabled={enviando}>
+        <div
+          className="fila"
+          style={{ justifyContent: 'flex-end', alignItems: 'center', marginTop: '1rem' }}
+        >
+          {esperarCompleto && faltaAlgo && !enviando && (
+            <span className="silencio" style={{ fontSize: '.82rem' }}>
+              Falta llenar {factura ? 'el nombre, el curso o los datos de factura' : 'el nombre o el curso'}.
+            </span>
+          )}
+          <button
+            className="boton con-icono" type="submit"
+            disabled={enviando || (esperarCompleto && faltaAlgo)}
+          >
             {enviando ? <span className="girando claro" /> : <IconoGuardar />}
             {enviando ? 'Enviando…' : (textoBoton ?? 'Dar de alta')}
           </button>

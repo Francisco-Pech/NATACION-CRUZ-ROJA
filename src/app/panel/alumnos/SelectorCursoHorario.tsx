@@ -35,9 +35,12 @@ export default function SelectorCursoHorario({
   grupos,
   deshabilitado = false,
   claveInicial = '',
+  alEscoger,
 }: {
   grupos: GrupoHorario[]
   deshabilitado?: boolean
+  /** Avisa qué grupo quedó puesto, para quien necesite saber si ya está. */
+  alEscoger?: (clave: string) => void
   /**
    * Con qué grupo arranca. Al editar a alguien ya inscrito se abre en el
    * suyo: en blanco parecería que no lleva curso.
@@ -84,6 +87,7 @@ export default function SelectorCursoHorario({
             setCurso(v)
             // El horario de antes puede no existir en el curso nuevo.
             setClave('')
+            alEscoger?.('')
           }}
           opciones={[{ valor: '', etiqueta: 'Escoge el curso…' }, ...cursos]}
         />
@@ -101,7 +105,10 @@ export default function SelectorCursoHorario({
           valor={clave}
           requerido
           deshabilitado={deshabilitado || !curso}
-          alCambiar={setClave}
+          alCambiar={(v) => {
+            setClave(v)
+            alEscoger?.(v)
+          }}
           opciones={[
             { valor: '', etiqueta: curso ? 'Escoge el horario…' : 'Primero el curso' },
             ...horarios,

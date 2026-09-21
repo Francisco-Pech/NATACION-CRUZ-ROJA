@@ -65,6 +65,7 @@ export default async function Registro() {
             precioLocker={actual ? pesos(actual.periodo.precioLocker) : ''}
             accionPropia={pedirRegistro}
             textoBoton="Enviar mi solicitud"
+            esperarCompleto
             notaLocker="El locker que escojas no queda apartado: se revisa cuando la delegación acepte tu solicitud, y si para entonces ya lo tomaron se te asigna otro."
           />
         )}
