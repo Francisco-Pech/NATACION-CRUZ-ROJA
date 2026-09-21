@@ -1,7 +1,9 @@
 import { describe, it, expect, beforeAll, beforeEach, afterAll } from 'vitest'
 import { prisma } from '@/lib/db'
 import { nuevoHash } from '@/lib/ids'
-import { inscribirAlumno } from '@/lib/servicios/inscripciones'
+import {
+  inscribirAlumno, cambiarSesiones, rehacerMesesPendientes,
+} from '@/lib/servicios/inscripciones'
 import { lockersDisponibles, asignarLocker, liberarLocker } from '@/lib/servicios/lockers'
 import { registrarPago, validarPago } from '@/lib/servicios/pagos'
 import { obtenerEstadoCuenta, verificarAcceso, colorDeEstado } from '@/lib/servicios/estado-cuenta'
@@ -101,6 +103,47 @@ afterAll(async () => {
 })
 
 describe('inscribirAlumno', () => {
+  // Administrador y Root pueden moverle el curso a un alumno ya inscrito.
+  // Lo que ya pagó no se toca; lo que debe se rehace con el precio nuevo.
+  it('rehace los meses pendientes con el curso nuevo', async () => {
+    const i = await inscritoConCurso('Se cambia de curso')
+    const antes = await prisma.cargo.findMany({
+      where: { inscripcionId: i.id }, include: { tipoCurso: true },
+    })
+    expect(antes.map((c) => c.montoMensualidad)).toEqual([77000])
+
+    // Se pasa al curso de Niños, que cuesta otra cosa.
+    const otra = await prisma.sesion.findFirstOrThrow({
+      where: { activo: true, tipoCurso: { clave: 'NINOS' } },
+    })
+    await cambiarSesiones(i.id, [otra.id])
+    await rehacerMesesPendientes(i.id)
+
+    const despues = await prisma.cargo.findMany({
+      where: { inscripcionId: i.id }, include: { tipoCurso: true },
+    })
+    expect(despues.map((c) => c.tipoCurso.clave)).toEqual(['NINOS'])
+    expect(despues.map((c) => c.montoMensualidad)).toEqual([65000])
+  })
+
+  it('no rehace un mes que ya se pagó', async () => {
+    const i = await inscritoConCurso('Ya pagó su mes')
+    const cargo = await prisma.cargo.findFirstOrThrow({ where: { inscripcionId: i.id } })
+    await prisma.cargo.update({ where: { id: cargo.id }, data: { estado: EstadoCargo.PAGADO } })
+
+    const otra = await prisma.sesion.findFirstOrThrow({
+      where: { activo: true, tipoCurso: { clave: 'NINOS' } },
+    })
+    await cambiarSesiones(i.id, [otra.id])
+    await rehacerMesesPendientes(i.id)
+
+    const quedo = await prisma.cargo.findUniqueOrThrow({
+      where: { id: cargo.id }, include: { tipoCurso: true },
+    })
+    expect(quedo.tipoCurso.clave).toBe('ADULTOS')
+    expect(quedo.montoMensualidad).toBe(77000)
+  })
+
   // Antes los cargos solo nacían de la cobranza del mes, y quien acababa
   // de inscribirse aparecía sin deber nada: no tenía qué pagar aunque
   // quisiera.

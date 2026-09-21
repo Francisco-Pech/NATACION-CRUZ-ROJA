@@ -10,10 +10,11 @@ import { colorDeEstado, ETIQUETA_ESTADO } from '@/lib/servicios/estado-cuenta'
 import { DIAS_SEMANA } from '@/lib/dias-semana'
 import FormularioAlumno from './FormularioAlumno'
 import TablaAlumnos from './TablaAlumnos'
+import TablaSolicitudes, { type Solicitud } from './TablaSolicitudes'
 import { anioEnCurso } from '@/lib/zona'
 import { periodoActual } from '@/lib/periodo-actual'
 import { conValor } from '@/lib/descuentos'
-import { pesos } from '@/lib/formato'
+import { pesos, fechaLarga } from '@/lib/formato'
 
 /**
  * Alumnos, en dos pestañas para quien ve las dos cosas.
@@ -28,7 +29,9 @@ import { pesos } from '@/lib/formato'
  */
 const PESTANAS = [
   { clave: 'alumnos', titulo: 'Alumnos' },
-  { clave: 'asistencia', titulo: 'Asistencia' },
+  // Solo para quien supervisa las listas; el capturista no la ve.
+  { clave: 'asistencia', titulo: 'Asistencia', soloSupervisa: true },
+  { clave: 'solicitudes', titulo: 'Solicitudes' },
 ] as const
 
 const dos = (n: number) => String(n).padStart(2, '0')
@@ -81,20 +84,81 @@ export default async function Alumnos({
   const supervisa = supervisaListas(usuario)
   const pedido = await searchParams
   const enAsistencia = supervisa && pedido.tab === 'asistencia'
+  const enSolicitudes = pedido.tab === 'solicitudes'
+  const pestanaActual = enSolicitudes ? 'solicitudes' : enAsistencia ? 'asistencia' : 'alumnos'
 
-  const pestanas = supervisa ? (
+  // Las pestañas salen para todos los del mostrador, no solo para quien
+  // supervisa: el capturista también atiende solicitudes. La de asistencia
+  // es la que sigue siendo suya.
+  const pestanas = (
     <nav className="pestanas no-imprimir">
-      {PESTANAS.map((p) => (
+      {PESTANAS.filter((p) => !('soloSupervisa' in p && p.soloSupervisa) || supervisa).map((p) => (
         <Link
           key={p.clave}
           href={`/panel/alumnos?tab=${p.clave}`}
-          className={`pestana${(p.clave === 'asistencia') === enAsistencia ? ' activa' : ''}`}
+          className={`pestana${p.clave === pestanaActual ? ' activa' : ''}`}
         >
           {p.titulo}
         </Link>
       ))}
     </nav>
-  ) : null
+  )
+
+  if (enSolicitudes) {
+    const pendientes = await prisma.solicitudDeRegistro.findMany({
+      where: { atendidaEn: null },
+      include: { tipoCurso: true, horario: true, locker: true },
+      orderBy: { creadoEn: 'asc' },
+    })
+
+    // Quién ya está inscrito con ese mismo nombre: es el duplicado más
+    // común —alguien que ya quedó y vuelve a llenar el formulario— y
+    // saberlo antes evita dar de alta dos veces a la misma persona.
+    const nombres = await prisma.alumno.findMany({
+      where: { nombreCompleto: { in: pendientes.map((s) => s.nombreCompleto) } },
+      select: { nombreCompleto: true },
+    })
+    const yaInscritos = new Set(nombres.map((a) => a.nombreCompleto))
+
+    // Los días en que corre cada grupo, para enseñar a qué se apuntó.
+    const sesiones = await prisma.sesion.findMany({
+      where: { activo: true },
+      select: { tipoCursoId: true, horarioId: true, diaSemana: true },
+    })
+
+    const solicitudes: Solicitud[] = pendientes.map((s) => ({
+      hash: s.hash,
+      nombreCompleto: s.nombreCompleto,
+      curso: s.tipoCurso.nombre,
+      horario: `${s.horario.horaInicio}–${s.horario.horaFin}`,
+      dias: [
+        ...new Set(
+          sesiones
+            .filter((x) => x.tipoCursoId === s.tipoCursoId && x.horarioId === s.horarioId)
+            .map((x) => x.diaSemana),
+        ),
+      ]
+        .sort((a, b) => a - b)
+        .map((n) => DIAS_SEMANA.find((d) => d.n === n)?.corto ?? '?')
+        .join(', '),
+      locker: s.locker?.numero ?? null,
+      telefono: s.telefono,
+      cuando: fechaLarga(s.creadoEn),
+      yaExiste: yaInscritos.has(s.nombreCompleto),
+    }))
+
+    return (
+      <>
+        <h1>Alumnos</h1>
+        {pestanas}
+        <p className="silencio" style={{ marginTop: '-.2rem' }}>
+          Quien se registró en la página de inscripción. Al darlo de alta nace su folio y
+          sus meses; hasta entonces no existe como alumno.
+        </p>
+        <TablaSolicitudes solicitudes={solicitudes} />
+      </>
+    )
+  }
 
   // La pestaña de asistencia se responde aquí y no más abajo: lo del
   // mostrador —inscripciones, lockers, descuentos— son varias consultas que
@@ -268,6 +332,7 @@ export default async function Alumnos({
       </div>
 
       <TablaAlumnos
+        grupos={grupos}
         descuentos={descuentos.map((d) => ({ hash: d.hash, nombre: conValor(d) }))}
         renglones={inscripciones.map((i) => {
           // Quien lleva dos cursos debe dos cargos este mes: el semáforo

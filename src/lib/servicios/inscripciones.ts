@@ -1,4 +1,5 @@
 import { prisma } from '@/lib/db'
+import { EstadoCargo } from '@prisma/client'
 import { generarFolio, generarTokenQR } from '@/lib/folio'
 import { mesesAlInscribir } from '@/lib/cobros'
 import { hoyEnCancun } from '@/lib/zona'
@@ -191,4 +192,42 @@ export async function cambiarSesiones(inscripcionId: string, sesionIds: string[]
       await apuntarASesion(tx, inscripcionId, sesionId)
     }
   })
+}
+
+/**
+ * Vuelve a armar los meses que el alumno todavía debe.
+ *
+ * Se llama cuando le cambian algo que afecta lo que paga: su curso, su
+ * horario o su descuento. Los cargos guardan sus montos al nacer, así que
+ * sin esto le seguirían cobrando el curso anterior.
+ *
+ * Se rehacen, no se recalculan: se borran los meses pendientes y se
+ * vuelven a generar con el motor de siempre. Así respetan lo mismo que
+ * cualquier otro mes —la temporada del curso, su tarifa, cada cuánto se
+ * cobra, el máximo de meses y la vigencia del descuento— en vez de tener
+ * una segunda manera de calcular lo mismo, que tarde o temprano se separa.
+ *
+ * Solo toca lo que está PENDIENTE y **sin un solo pago**, ni siquiera uno
+ * iniciado. Lo pagado no se toca nunca; lo vencido tampoco, porque ya
+ * carga su recargo y rehacerlo se lo perdonaría.
+ */
+export async function rehacerMesesPendientes(inscripcionId: string) {
+  const inscripcion = await prisma.inscripcion.findUnique({
+    where: { id: inscripcionId },
+    include: { ciclo: true },
+  })
+  if (!inscripcion) return
+
+  const rehacibles = await prisma.cargo.findMany({
+    where: {
+      inscripcionId,
+      estado: EstadoCargo.PENDIENTE,
+      pagos: { none: {} },
+    },
+    select: { id: true },
+  })
+  if (rehacibles.length === 0) return
+
+  await prisma.cargo.deleteMany({ where: { id: { in: rehacibles.map((c) => c.id) } } })
+  await generarSusMeses(inscripcionId, inscripcion.ciclo)
 }

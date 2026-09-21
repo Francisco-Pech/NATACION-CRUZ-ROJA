@@ -3,11 +3,15 @@
 import { revalidatePath } from 'next/cache'
 import { prisma } from '@/lib/db'
 import { requierePermiso } from '@/lib/sesion'
-import { inscribirAlumno } from '@/lib/servicios/inscripciones'
+import { esAdministrativo } from '@/lib/permisos'
+import {
+  inscribirAlumno, cambiarSesiones, rehacerMesesPendientes,
+} from '@/lib/servicios/inscripciones'
 import {
   validarDatosFactura, validarConstancia, normalizarRfc, validarCorreoFactura,
 } from '@/lib/facturacion'
 import { LARGO_NOMBRE } from '@/lib/validaciones'
+import { nombreDeAlumno } from '@/lib/formato'
 import { validarVigencia } from '@/lib/descuentos'
 import { armarCredencial } from '@/lib/credencial'
 import { periodoActual } from '@/lib/periodo-actual'
@@ -20,7 +24,7 @@ export async function darDeAltaAlumno(_previo: Resultado, datos: FormData): Prom
   try {
     await requierePermiso('ALUMNOS')
 
-    const nombreCompleto = texto(datos, 'nombreCompleto')
+    const nombreCompleto = nombreDeAlumno(texto(datos, 'nombreCompleto'))
     if (nombreCompleto.length < LARGO_NOMBRE.min) {
       return no(`El nombre debe tener al menos ${LARGO_NOMBRE.min} letras.`)
     }
@@ -197,20 +201,36 @@ export async function obtenerCredencial(id: string) {
  * tiene su propia pantalla, donde se ve cuál está libre.
  */
 export async function obtenerAlumno(inscripcionId: string) {
-  await requierePermiso('ALUMNOS')
+  const usuario = await requierePermiso('ALUMNOS')
 
   const inscripcion = await prisma.inscripcion.findUnique({
     where: { id: inscripcionId },
-    include: { alumno: true, descuento: true },
+    include: {
+      alumno: true,
+      descuento: true,
+      sesiones: { include: { sesion: { include: { tipoCurso: true, horario: true } } } },
+    },
   })
   if (!inscripcion) return null
 
   const a = inscripcion.alumno
   const aFecha = (d: Date | null) => (d ? d.toISOString().slice(0, 10) : '')
 
+  // A qué curso y hora va hoy. Todas sus sesiones son del mismo grupo: se
+  // escoge el curso y la hora, y queda apuntado a los días en que eso corre.
+  const suya = inscripcion.sesiones[0]?.sesion
+  const grupo = suya ? `${suya.tipoCurso.hash}|${suya.horario.hash}` : ''
+
   return {
     folio: inscripcion.folio,
     nombreCompleto: a.nombreCompleto,
+    grupo,
+    /**
+     * Mover el curso a media temporada rehace los meses que se deben, con
+     * el precio del curso nuevo. Eso lo decide quien manda en la escuela,
+     * no quien captura en la ventanilla.
+     */
+    puedeMoverGrupo: esAdministrativo(usuario),
     descuento: inscripcion.descuento?.hash ?? '',
     descuentoDesde: aFecha(inscripcion.descuentoDesde),
     descuentoHasta: aFecha(inscripcion.descuentoHasta),
@@ -238,7 +258,7 @@ export async function obtenerAlumno(inscripcionId: string) {
  */
 export async function editarAlumno(_previo: Resultado, datos: FormData): Promise<Resultado> {
   try {
-    await requierePermiso('ALUMNOS')
+    const usuario = await requierePermiso('ALUMNOS')
 
     const inscripcion = await prisma.inscripcion.findUnique({
       where: { id: texto(datos, 'inscripcionId') },
@@ -246,7 +266,7 @@ export async function editarAlumno(_previo: Resultado, datos: FormData): Promise
     })
     if (!inscripcion) return no('Esa inscripción ya no existe.')
 
-    const nombreCompleto = texto(datos, 'nombreCompleto')
+    const nombreCompleto = nombreDeAlumno(texto(datos, 'nombreCompleto'))
     if (nombreCompleto.length < LARGO_NOMBRE.min) {
       return no(`El nombre va completo: al menos ${LARGO_NOMBRE.min} letras.`)
     }
@@ -341,8 +361,36 @@ export async function editarAlumno(_previo: Resultado, datos: FormData): Promise
       }),
     ])
 
+    /**
+     * El curso y el horario: solo Administrador y Root.
+     *
+     * La pantalla ya no le enseña el campo a nadie más, pero esto es la
+     * regla: un formulario alterado puede traer el campo igual, y mover a
+     * alguien de curso cambia lo que paga.
+     */
+    let cambioDeGrupo = ''
+    const grupo = texto(datos, 'grupo')
+    if (grupo && esAdministrativo(usuario)) {
+      const [cursoHash = '', horarioHash = ''] = grupo.split('|')
+      const sesiones = await prisma.sesion.findMany({
+        where: {
+          activo: true,
+          tipoCurso: { hash: cursoHash, activo: true },
+          horario: { hash: horarioHash },
+        },
+        select: { id: true },
+      })
+      if (sesiones.length === 0) return no('Ese curso ya no se da a esa hora.')
+      await cambiarSesiones(inscripcion.id, sesiones.map((s) => s.id))
+      cambioDeGrupo = ' Se le rehicieron los meses que debe con el curso nuevo.'
+    }
+
+    // Lo que debe se vuelve a armar con lo que acaba de quedar: su curso y
+    // su descuento. Lo pagado no se toca.
+    await rehacerMesesPendientes(inscripcion.id)
+
     revalidatePath('/panel/alumnos')
-    return { ok: true, mensaje: `${nombreCompleto} quedó actualizado.` }
+    return { ok: true, mensaje: `${nombreCompleto} quedó actualizado.${cambioDeGrupo}` }
   } catch (e) {
     return no(e instanceof Error ? e.message : 'No se pudo guardar.')
   }

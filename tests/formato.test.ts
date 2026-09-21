@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { conMayuscula, nombreMes } from '@/lib/formato'
+import { conMayuscula, nombreMes, nombreDeAlumno } from '@/lib/formato'
 
 /**
  * Los meses se guardan en minúscula porque casi siempre van dentro de una
@@ -22,5 +22,29 @@ describe('conMayuscula', () => {
 
   it('con nada devuelve nada', () => {
     expect(conMayuscula('')).toBe('')
+  })
+})
+
+describe('nombreDeAlumno', () => {
+  it('lo pone en mayúsculas', () => {
+    expect(nombreDeAlumno('francisco pech')).toBe('FRANCISCO PECH')
+  })
+
+  // En español la mayúscula lleva su acento: JOSÉ, no JOSE. Es el nombre de
+  // una persona y así va impreso en su credencial.
+  it('respeta los acentos y la eñe', () => {
+    expect(nombreDeAlumno('josé maría muñoz')).toBe('JOSÉ MARÍA MUÑOZ')
+  })
+
+  it('quita los espacios de sobra', () => {
+    expect(nombreDeAlumno('  ana   sofía  ')).toBe('ANA SOFÍA')
+  })
+
+  it('lo que ya venía en mayúsculas se queda igual', () => {
+    expect(nombreDeAlumno('LENNY')).toBe('LENNY')
+  })
+
+  it('vacío se queda vacío', () => {
+    expect(nombreDeAlumno('   ')).toBe('')
   })
 })

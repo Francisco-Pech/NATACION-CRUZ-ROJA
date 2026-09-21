@@ -92,6 +92,7 @@ model Usuario {
   lockers           LockerDeProfesor[]
   grupos            ProfesorDeGrupo[]
   verificaciones    VerificacionCredencial[]
+  solicitudes       SolicitudDeRegistro[]
 
   @@index([rolId])
 }
@@ -187,6 +188,7 @@ model Inscripcion {
   lockers        AsignacionLocker[]
   asistencias    Asistencia[]
   verificaciones VerificacionCredencial[]
+  solicitudes    SolicitudDeRegistro[]
 
   @@unique([alumnoId, cicloAnualId])
 }
@@ -347,11 +349,12 @@ model TipoCurso {
   maxMeses    Int?           @default(3)
   activo      Boolean        @default(true)
 
-  sesiones   Sesion[]
-  tarifas    Tarifa[]
-  cargos     Cargo[]
-  temporadas TemporadaCurso[]
-  profesores ProfesorDeGrupo[]
+  sesiones    Sesion[]
+  tarifas     Tarifa[]
+  cargos      Cargo[]
+  temporadas  TemporadaCurso[]
+  profesores  ProfesorDeGrupo[]
+  solicitudes SolicitudDeRegistro[]
 }
 
 /// Un tramo del año en que el curso corre. Según el modo del curso se
@@ -398,9 +401,10 @@ model Horario {
   descripcion String?
   activo      Boolean @default(true)
 
-  sesiones   Sesion[]
-  laborales  FranjaLaboral[]
-  profesores ProfesorDeGrupo[]
+  sesiones    Sesion[]
+  laborales   FranjaLaboral[]
+  profesores  ProfesorDeGrupo[]
+  solicitudes SolicitudDeRegistro[]
 
   @@unique([horaInicio, horaFin])
 }
@@ -487,6 +491,7 @@ model Locker {
 
   asignaciones AsignacionLocker[]
   deProfesor   LockerDeProfesor?
+  solicitudes  SolicitudDeRegistro[]
 }
 
 /// Un locker apartado para un profesor.
@@ -675,4 +680,37 @@ model ReporteDePago {
   creadoEn   DateTime @default(now())
 
   @@index([atendido, creadoEn])
+}
+
+/// Quien se inscribió por internet y todavía no es alumno.
+///
+/// Vive aparte de `Alumno` a propósito: hasta que alguien de la delegación
+/// la da de alta no hay alumno, ni folio, ni cargos. El formulario es
+/// abierto —no pide contraseña— y un alumno inventado con folio podría
+/// pagar, pasar lista y sacar credencial.
+///
+/// No se borra al atenderla: queda con la fecha, quién la atendió y, si se
+/// dio de alta, a qué inscripción se convirtió. Descartada es una atendida
+/// sin inscripción.
+model SolicitudDeRegistro {
+  id             String    @id @default(cuid())
+  hash           String    @unique
+  nombreCompleto String
+  tipoCursoId    String
+  horarioId      String
+  /// Vacío: no quiere locker. No todos lo usan y se cobra aparte cada mes.
+  lockerId       String?
+  telefono       String?
+  atendidaEn     DateTime?
+  atendidaPorId  String?
+  inscripcionId  String?
+  creadoEn       DateTime  @default(now())
+
+  tipoCurso   TipoCurso    @relation(fields: [tipoCursoId], references: [id], onDelete: Cascade)
+  horario     Horario      @relation(fields: [horarioId], references: [id], onDelete: Cascade)
+  locker      Locker?      @relation(fields: [lockerId], references: [id])
+  atendidaPor Usuario?     @relation(fields: [atendidaPorId], references: [id])
+  inscripcion Inscripcion? @relation(fields: [inscripcionId], references: [id])
+
+  @@index([atendidaEn])
 }

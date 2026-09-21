@@ -29,3 +29,17 @@ export function fechaLarga(fecha: Date): string {
 export function conMayuscula(texto: string): string {
   return texto ? texto[0].toUpperCase() + texto.slice(1) : texto
 }
+
+/**
+ * El nombre de un alumno, como se guarda y como se imprime: en mayúsculas.
+ *
+ * Se decidió así para que la lista se lea pareja: capturado a mano, el
+ * mismo nombre llega de cinco maneras —"ana sofía", "Ana Sofia", "ANA"— y
+ * buscarlo después se vuelve adivinanza.
+ *
+ * Con acentos: en español la mayúscula los conserva, y esto es el nombre
+ * de una persona, no un encabezado. JOSÉ, no JOSE.
+ */
+export function nombreDeAlumno(texto: string): string {
+  return (texto ?? '').trim().replace(/\s+/g, ' ').toLocaleUpperCase('es')
+}

@@ -16,9 +16,12 @@ type Datos = NonNullable<Awaited<ReturnType<typeof obtenerAlumno>>>
  * Editar a un alumno sin salir de la lista.
  *
  * Cambia su nombre, el descuento que lleva con su vigencia, y si factura y
- * con qué datos. El curso, el horario y el locker no se tocan aquí: mover un
- * curso a media temporada re-toca cargos que ya se generaron, y el locker
- * tiene su propia pantalla, donde además se ve cuál está libre.
+ * con qué datos. Administrador y Root pueden además moverlo de curso y de
+ * horario: eso rehace los meses que todavía debe con el precio nuevo, y por
+ * eso no lo hace cualquiera. Lo que ya pagó no se toca nunca.
+ *
+ * El locker no se toca aquí: tiene su propia pantalla, donde además se ve
+ * cuál está libre.
  *
  * Los datos se piden al abrir y no con la lista: son ocho campos por alumno
  * que casi nunca se miran, y traerlos para cien renglones sería cargar
@@ -27,9 +30,12 @@ type Datos = NonNullable<Awaited<ReturnType<typeof obtenerAlumno>>>
 export default function ModalEditar({
   id,
   descuentos,
+  grupos,
 }: {
   id: string
   descuentos: Array<{ hash: string; nombre: string }>
+  /** Los cursos y horarios abiertos, para poder moverlo de grupo. */
+  grupos: Array<{ clave: string; cursoNombre: string; horario: string; dias: string }>
 }) {
   const [abierto, setAbierto] = useState(false)
 
@@ -100,6 +106,7 @@ export default function ModalEditar({
                   id={id}
                   datos={busca.datos}
                   descuentos={descuentos}
+                  grupos={grupos}
                   cerrar={() => setAbierto(false)}
                 />
               )}
@@ -115,11 +122,13 @@ function Formulario({
   id,
   datos,
   descuentos,
+  grupos,
   cerrar,
 }: {
   id: string
   datos: Datos
   descuentos: Array<{ hash: string; nombre: string }>
+  grupos: Array<{ clave: string; cursoNombre: string; horario: string; dias: string }>
   cerrar: () => void
 }) {
   const [aviso, accion, enviando] = useActionState(editarAlumno, null)
@@ -156,8 +165,31 @@ function Formulario({
         <label htmlFor={`nombre-${id}`}>Nombre completo</label>
         <input
           id={`nombre-${id}`} name="nombreCompleto" required disabled={enviando}
+          autoCapitalize="characters" style={{ textTransform: 'uppercase' }}
           value={nombre} onChange={(e) => setNombre(e.target.value)}
         />
+
+        {datos.puedeMoverGrupo && (
+          <>
+            <label htmlFor={`grupo-${id}`} style={{ marginTop: '.8rem', display: 'block' }}>
+              Curso y horario
+            </label>
+            <select
+              id={`grupo-${id}`} name="grupo" defaultValue={datos.grupo} disabled={enviando}
+            >
+              {datos.grupo === '' && <option value="">Sin curso</option>}
+              {grupos.map((g) => (
+                <option key={g.clave} value={g.clave}>
+                  {g.cursoNombre} · {g.horario} · {g.dias}
+                </option>
+              ))}
+            </select>
+            <p className="silencio" style={{ fontSize: '.8rem', marginTop: '.3rem' }}>
+              Cambiarlo rehace los meses que todavía debe, con el precio del curso nuevo.
+              Lo que ya pagó se queda como está.
+            </p>
+          </>
+        )}
 
         <label style={{ marginTop: '.8rem', display: 'block' }}>Descuento</label>
         <Selector

@@ -82,6 +82,7 @@ export default function FormularioAlumno({
             <label htmlFor="nombreCompleto">Nombre completo</label>
             <input
               id="nombreCompleto" name="nombreCompleto" required disabled={enviando}
+              autoCapitalize="characters" style={{ textTransform: 'uppercase' }}
               placeholder="Ana Sofía Canul Pérez"
               value={datos.nombreCompleto} onChange={cambiar('nombreCompleto')}
             />

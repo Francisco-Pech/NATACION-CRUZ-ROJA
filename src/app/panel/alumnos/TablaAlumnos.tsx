@@ -45,10 +45,13 @@ const sinAcentos = (texto: string) =>
 export default function TablaAlumnos({
   renglones,
   descuentos,
+  grupos,
 }: {
   renglones: RenglonAlumno[]
   /** Para la ventana de editar: el mismo catálogo que ofrece el alta. */
   descuentos: Array<{ hash: string; nombre: string }>
+  /** Los cursos y horarios abiertos, para que Root pueda mover de grupo. */
+  grupos: Array<{ clave: string; cursoNombre: string; horario: string; dias: string }>
 }) {
   const [busqueda, setBusqueda] = useState('')
   const [puestos, setPuestos] = useState<Record<string, string>>({})
@@ -229,7 +232,7 @@ export default function TablaAlumnos({
                   {/* Se edita sobre la lista: quien corrige un nombre mal
                       escrito no debería perder la página, los filtros y el
                       renglón en el que iba. */}
-                  <ModalEditar id={r.id} descuentos={descuentos} />
+                  <ModalEditar id={r.id} descuentos={descuentos} grupos={grupos} />
                 </td>
               </tr>
             ))}
